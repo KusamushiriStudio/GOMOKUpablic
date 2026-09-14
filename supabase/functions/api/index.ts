@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { constants, profile as profileLogic, rules } from './game-core.js';
+import { isSettled, rewardsForMatch } from './rewards.ts';
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -102,23 +103,6 @@ async function commitProfile(db: any, userId: string, revision: number, draft: a
 }
 
 /* ───────────────────── 対戦報酬 ───────────────────── */
-
-/** 決着した対戦の報酬額を席ごとに決める（盤面だけから決まる純粋な計算）。 */
-function rewardsForMatch(match: any) {
-  const aborted = match.status === 'aborted';
-  return (match.seatSnapshot || []).map((s: any) => {
-    const outcome = aborted ? 'aborted' : rules.outcomeForSeat(match.state.result, s.seat);
-    return {
-      userId: s.userId,
-      seat: s.seat,
-      charId: s.charId,
-      outcome,
-      perica: constants.REWARD_PERICA[outcome] ?? 0,
-      playerXp: constants.REWARD_PLAYER_XP[outcome] ?? 0,
-      charXp: constants.REWARD_CHAR_XP[outcome] ?? 0,
-    };
-  });
-}
 
 /**
  * 決着した対戦の報酬を、各自のプロフィールへ実際に加算する。
@@ -310,7 +294,7 @@ async function route(ctx: any, path: string, body: any) {
     const next = { ...match, state: applied.state, status: applied.state.status };
     // 決着した手と同じ確定で報酬額を残す。盤面から決まる値なので、
     // あとから誰が読んでも同じ結果になる。
-    const finished = next.status === 'finished' || next.status === 'aborted';
+    const finished = isSettled(next);
     if (finished && !Array.isArray(next.rewards)) next.rewards = rewardsForMatch(next);
     const response = { result: { matchId: match.matchId, revision: match.revision + 1 } };
     const { data, error } = await ctx.db.rpc('triad_commit_match', {
