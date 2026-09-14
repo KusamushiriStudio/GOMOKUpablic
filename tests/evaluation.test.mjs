@@ -66,8 +66,6 @@ test('確定した通常着手とスキル後のstateで評価が更新される
   const skillState = stateFixture();
   skillState.stones[90] = 2;
   skillState.energy[1] = 6;
-  // 現行V99では攻撃スキルは自分の33手目から解放される。
-  skillState.turnsTaken[1] = 33;
   const beforeSkill = evaluatePosition(skillState).map((item) => item.score);
   const skill = applyAction(skillState, { type: 'skill', seat: 1, skillId: 'spark', index: 90 });
   assert.equal(skill.ok, true);

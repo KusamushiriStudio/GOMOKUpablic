@@ -1971,7 +1971,8 @@ const CHARACTER_BY_ID = Object.freeze(
 );
 
 const STARTER_CHARACTER_IDS = Object.freeze(
-  CHARACTERS.filter((c) => c.starter).map((c) => c.id),
+  // 対戦キャラクターはガチャ解放ではなく、最初から全員使用できる。
+  CHARACTERS.map((c) => c.id),
 );
 
 /** 技IDから技定義を引く（物語は席が複数の技を持つため、キャラを経由せずに引く） */
@@ -2100,16 +2101,8 @@ function parseDrawId(drawId) {
   return null;
 }
 
-/** ガチャ排出対象 34 種（キャラ 6 + ファッション 12 + 盤面 8 + 碁石 8）。 */
+/** ガチャ排出対象 28 種（ファッション 12 + 盤面 8 + 碁石 8）。キャラは全員初期解放。 */
 const GACHA_POOL = Object.freeze([
-  ...CHARACTERS.map((c) => ({
-    drawId: characterDrawId(c.id),
-    kind: 'character',
-    refId: c.id,
-    name: c.name,
-    rarity: c.rarity,
-    slot: null,
-  })),
   ...COSMETICS.filter((c) => c.gachaPool).map((c) => ({
     drawId: c.id,
     kind: 'cosmetic',
@@ -3065,7 +3058,7 @@ function createProfile(opts = {}) {
   const now = Date.now();
   const chars = {};
   for (const c of CHARACTERS) {
-    chars[c.id] = { owned: !!c.starter, count: c.starter ? 1 : 0, xp: 0 };
+    chars[c.id] = { owned: true, count: 1, xp: 0 };
   }
   const cosmetics = {};
   for (const id of Object.values(DEFAULT_EQUIP)) cosmetics[id] = 1;
@@ -3172,7 +3165,7 @@ function normalizeProfile(raw) {
       }
     }
   }
-  // 初期所持キャラは必ず所持
+  // 全キャラを初期所持にする。既存セーブのXP・重複数は上書きしない。
   for (const id of STARTER_CHARACTER_IDS) {
     base.chars[id].owned = true;
     base.chars[id].count = Math.max(1, base.chars[id].count);
@@ -6130,7 +6123,7 @@ const ERR_MESSAGE_JA = Object.freeze({
   [ERR.NOT_ADJACENT]: '移動先は隣接する8方向の空き交点だけです。',
   [ERR.PASS_NOT_ALLOWED]: '置ける交点があるためパスはできません。',
   [ERR.BAD_ACTION]: '不正な操作です。',
-  [ERR.SKILL_LOCKED]: 'この技はまだ使えません（攻勢解放より前です）。',
+  [ERR.SKILL_LOCKED]: 'この技は現在使用できません。',
   [ERR.NEED_EXTRA]: '追加配置が残っています。先に置いてください。',
   [ERR.GUARDED_TRANSMUTE]: '結界に守られているため転光できません。',
 });
@@ -6203,11 +6196,12 @@ function createMatch(opts) {
     ply: 0,
     /** 追加配置の途中状態。{seat, remaining, banned} */
     pending: null,
-    /** V99：技の使用可能上限（下限保証の補充で増える） */
+    /** V99：全スキルを初手から強化形・十分な使用枠で使える。 */
     usesCap: v99 ? Object.fromEntries(seatList.map((n) => {
       const st = seats.find((x) => x.seat === n);
       const sk = st ? SKILL_BY_CHARACTER[st.charId] : null;
-      return [n, sk ? sk.uses : 0];
+      const enhanced = st ? v99.enhance[st.charId] : null;
+      return [n, sk ? Math.max(sk.uses, enhanced?.usesFloor || 0) : 0];
     })) : null,
     // 先手だけ開始時に 1。これは初回の手番分であり、最初の手番開始で加算しない。
     energy: { ...zeros(0), [v99 ? startSeat : 1]: 1 },
@@ -6401,7 +6395,7 @@ function outcomeForSeat(result, seat) {
   return isWinnerSeat(result, seat) ? 'win' : 'lose';
 }
 
-/* ─────────────────────────── V99：段階解放 ─────────────────────────── */
+/* ─────────────────────────── V99：初手から全スキル解放 ─────────────────────────── */
 
 /** そのルールセットの V99 設定（V99 でなければ null） */
 function v99Of(state) {
@@ -6422,7 +6416,7 @@ function orderIndexOf(state, seat) {
   return Number(seat) - 1;
 }
 
-/** その席の攻勢強化が解放される手番回数 */
+/** 互換用の解放手番。現行V99は0なので開始時から解放済み。 */
 function unlockTurnOf(state, seat) {
   const v = v99Of(state);
   if (!v) return Infinity;
@@ -6449,7 +6443,7 @@ function v99FormOf(state, seat, skillId) {
     const pen = v.orderPenalty[orderIndexOf(state, seat)] || 0;
     return { form: 'enhanced', cost: e.cost, extra: Math.max(0, e.extra - pen), locked: false };
   }
-  // 通常フェーズ：攻撃4種はロック、結界・氷結は使える
+  // 旧ルール互換。現行V99は開始時から強化済みなので locked は常に false。
   const locked = v.lockedSkills.includes(skillId);
   return { form: 'normal', cost: base.cost, extra: 0, locked };
 }
@@ -6460,10 +6454,16 @@ function usesCapOf(state, seat, skillId) {
   const base = effectiveSkill(state, SKILL_BY_ID[skillId]);
   if (!v) return base ? base.uses : 0;
   const cap = state.usesCap?.[seat];
-  return Number.isFinite(cap) ? cap : (base ? base.uses : 0);
+  const current = Number.isFinite(cap) ? cap : (base ? base.uses : 0);
+  // 公開更新前から継続中の対戦も、再開直後から初期解放後の使用枠へ揃える。
+  if (v.unlockTurn <= 0) {
+    const charId = seatOf(state, seat)?.charId;
+    return Math.max(current, v.enhance[charId]?.usesFloor || 0);
+  }
+  return current;
 }
 
-/** 手番開始の処理（エナジー・手番回数・解放時の補充） */
+/** 手番開始の処理（エナジー・手番回数・旧進行中データの補充） */
 function beginTurnFor(state, seat) {
   state.energy[seat] = Math.min(MAX_ENERGY, state.energy[seat] + 1);
   const v = v99Of(state);
@@ -6710,7 +6710,7 @@ function doSkill(state, seat, action) {
     : (list.length === 1 ? list[0] : null);
   if (!skill) throw new RuleError(ERR.NO_SKILL);
 
-  // V99：通常フェーズでは攻撃4種がロック。解放後は強化の消費・回数・追加配置になる。
+  // V99：現行ルールでは初手から強化時の消費・回数・追加配置を使う。
   const v = v99Of(state);
   const form = v ? v99FormOf(state, seat, skill.id) : null;
   if (form && form.locked) throw new RuleError(ERR.SKILL_LOCKED);
@@ -7325,7 +7325,7 @@ function skillWinPlan(state, seat, u) {
   return null;
 }
 
-/** V99 のCPU。段階解放を理解し、追加配置も使う。 */
+/** V99 のCPU。初期解放済みスキルと追加配置を扱う。 */
 function chooseCpuActionV99(state, seat, rand) {
   // 追加配置の途中
   if (state.pending && state.pending.remaining > 0 && state.pending.seat === seat) {
@@ -7492,25 +7492,25 @@ const RULESET = Object.freeze({
 });
 
 /**
- * V99 の段階解放の設定。
- * 由来：docs/V99_BALANCE_REPORT.md の推奨案 V99-G。
- * 新規シード990001の1000局で 五目率100.0%／平均100.58手／行動順差5.7pt。
+ * V99 の全スキル解放・強化設定。
+ * 2026-09-14：手番回数による解放制限を撤廃し、強化形を初手から利用可能にした。
+ * 防御系の結界・氷結は攻撃系より追加配置を1つ多くして相対的な防御力を維持する。
  *
- * ここに書いてあるのは「解放の時期」「消費」「回数の下限」「追加配置の数」だけで、
+ * ここに書いてあるのは「消費」「回数の下限」「追加配置の数」だけで、
  * 五目を強制的に完成させる処理・自動補完・強制決着は一切含まない。
  */
 const V99 = Object.freeze({
-  /** 攻勢強化が解放される「自分の手番回数」 */
-  unlockTurn: 33,
-  /** 行動順ごとの解放のずらし（実際の1番手・2番手・3番手） */
-  unlockOffsetByOrder: Object.freeze([0, 0, 1]),
+  /** 0＝全員が試合開始時から解放済み。 */
+  unlockTurn: 0,
+  /** 解放時期に行動順差を設けない。 */
+  unlockOffsetByOrder: Object.freeze([0, 0, 0]),
   /** 長期戦の回復が入る「自分の手番回数」 */
   longTurn: 44,
   /** 長期戦で回数が回復するキャラ */
   longRecover: Object.freeze(['hayate', 'kuon', 'akari']),
-  /** 通常フェーズでは使えない技（結界・氷結は最初から使える） */
-  lockedSkills: Object.freeze(['spark', 'windwalk', 'pull', 'transmute']),
-  /** 強化時の消費・回数の下限・追加配置の数（キャラ別） */
+  /** 全スキルを最初から利用可能にする。 */
+  lockedSkills: Object.freeze([]),
+  /** 初期状態の消費・回数の下限・追加配置の数（キャラ別） */
   enhance: Object.freeze({
     hibana: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
     mamori: Object.freeze({ cost: 1, usesFloor: 12, extra: 3 }),
@@ -7611,7 +7611,7 @@ const RULESETS = Object.freeze({
     minStoneJudgement: true,
     /** 毎試合、開始プレイヤーをランダムに選ぶ（P1/P2/P3 の識別は変えない） */
     randomStartSeat: true,
-    /** 段階解放。詳細は上の V99 定数。 */
+    /** 全スキル初期解放・強化。詳細は上の V99 定数。 */
     v99: V99,
     rewards: 'pvp',
     stats: 'pvp',
@@ -8632,6 +8632,7 @@ __def("../../shared/evaluation.js", function (__req) {
  * 探索を深くせず、連・即勝ち筋・手番・エナジー・術・結界・氷結を数値化する。
  */
 const { WIN_LENGTH, LINE_DIRS, SKILL_BY_ID, SKILL_BY_CHARACTER } = __req("../../shared/constants.js");
+const { v99FormOf, usesCapOf } = __req("../../shared/rules.js");
 
 function activeSkills(state, seat) {
   const rec = state.seats.find((item) => item.seat === seat);
@@ -8649,6 +8650,7 @@ function usedCount(state, seat, skillId) {
 }
 
 function useCap(state, seat, skill) {
+  if (v99FormOf(state, seat, skill.id)) return usesCapOf(state, seat, skill.id);
   const cap = state.usesCap?.[seat];
   return Number.isFinite(cap) ? cap : skill.uses;
 }
@@ -8767,7 +8769,8 @@ function scoreSkills(state, seat) {
   for (const skill of activeSkills(state, seat)) {
     const remaining = Math.max(0, useCap(state, seat, skill) - usedCount(state, seat, skill.id));
     if (!remaining) continue;
-    const ready = energy >= skill.cost;
+    const form = v99FormOf(state, seat, skill.id);
+    const ready = energy >= (form?.cost ?? skill.cost);
     const availability = (ready ? 18 : 7) * Math.min(remaining, 3);
     if (skill.id === 'spark') score += availability + Math.min(20, opponentStones) * (ready ? 1.2 : 0.4);
     else if (skill.id === 'ward') score += availability + Math.min(12, ownStones) * 0.8;
@@ -8826,7 +8829,7 @@ const { fx } = __req("fx.js");
 const { preferences } = __req("preferences.js");
 const { evaluatePosition } = __req("../../shared/evaluation.js");
 const { CHARACTERS, CHARACTER_BY_ID, SEAT_COLORS, MAX_ENERGY, DEFAULT_EQUIP } = __req("../../shared/constants.js");
-const { createMatch, applyAction, canUseSkill, skillFirstTargets, skillSecondTargets, mustPass, chooseCpuAction, legalPlacements, errorMessage, labelOf, outcomeForSeat, isWinnerSeat, skillForSeat, skillInRuleset, usableSkills, skillOfId, skillsOf, usesOf, cloneState, findWinningLine, pickStartSeat, v99Of, v99Info, isFrozen } = __req("../../shared/rules.js");
+const { createMatch, applyAction, canUseSkill, skillFirstTargets, skillSecondTargets, mustPass, chooseCpuAction, legalPlacements, errorMessage, labelOf, outcomeForSeat, isWinnerSeat, skillForSeat, skillInRuleset, usableSkills, skillOfId, skillsOf, usesOf, usesCapOf, cloneState, findWinningLine, pickStartSeat, v99Of, v99Info, isFrozen } = __req("../../shared/rules.js");
 const { DEFAULT_PVP_RULESET } = __req("../../shared/rulesets.js");
 const { appearanceFor, grantMatchReward, ownedCharacters } = __req("../../shared/profile.js");
 
@@ -9167,18 +9170,19 @@ function renderMatch(root, ctx, session) {
           const list = skillsOf(st, s.seat);
           if (list.length === 1) {
             const sk = list[0];
-            return `技${Math.max(0, sk.uses - usesOf(st, s.seat, sk.id))}/${sk.uses}`;
+            const cap = v99Of(st) ? usesCapOf(st, s.seat, sk.id) : sk.uses;
+            return `技${Math.max(0, cap - usesOf(st, s.seat, sk.id))}/${cap}`;
           }
           const left = list.reduce((n, sk) => n + Math.max(0, sk.uses - usesOf(st, s.seat, sk.id)), 0);
           const max = list.reduce((n, sk) => n + sk.uses, 0);
           return `術${left}/${max}`;
         })() }),
         dis ? el('span', { text: '再接続中', style: 'color:#b5462f' }) : null,
-        v99Of(st) ? el('span', { text: `${st.turnsTaken?.[s.seat] ?? 0}手番` }) : null,
-        v99Of(st) && !isEnhancedSeat(st, s.seat)
+        v99Of(st)?.unlockTurn > 0 ? el('span', { text: `${st.turnsTaken?.[s.seat] ?? 0}手番` }) : null,
+        v99Of(st)?.unlockTurn > 0 && !isEnhancedSeat(st, s.seat)
           ? el('span', { text: `解放まで${v99Info(st, s.seat).turnsToUnlock}`, style: 'color:#8a7f63' })
           : null,
-        v99Of(st) && isEnhancedSeat(st, s.seat)
+        v99Of(st)?.unlockTurn > 0 && isEnhancedSeat(st, s.seat)
           ? el('span', { text: '攻勢強化', style: 'color:#c0362c;font-weight:700' })
           : null,
       ]),
@@ -9214,7 +9218,7 @@ function renderMatch(root, ctx, session) {
     if (pend) {
       sel.mode = 'extra';
       sel.skillId = null;
-      info.appendChild(el('div', { class: 'notice', text: `攻勢強化！ 追加配置 残り${pend.remaining}。合法な空き交点を選んでください（この手番のうちに置きます）。` }));
+      info.appendChild(el('div', { class: 'notice', text: `スキル連携！ 追加配置 残り${pend.remaining}。合法な空き交点を選んでください（この手番のうちに置きます）。` }));
     }
     const needPass = mustPass(st);
     // いま選んでいる術が使えなくなっていたら通常着手へ戻す
@@ -10077,7 +10081,7 @@ function renderGacha(root, ctx) {
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: '常設ガチャ「三色縁起」' }),
     el('div', { class: 'kv' }, [el('span', { text: '所持ペリカ' }), el('b', { text: fmt(p.perica) })]),
-    el('p', { class: 'muted', text: '1回 1ペリカ／10+1回 10ペリカ（1回分おまけ）。キャラ6体・ファッション12点・盤面8点・碁石8点の全34種が対象です。11回目も通常と同じ排出率で、保証枠・天井・確率上昇はありません。' }),
+    el('p', { class: 'muted', text: '全6キャラクターは最初から使用できます。ガチャは着せ替え専用で、1回 1ペリカ／10+1回 10ペリカ（1回分おまけ）。ファッション12点・盤面8点・碁石8点の全28種が対象です。11回目も通常と同じ排出率で、保証枠・天井・確率上昇はありません。' }),
     el('div', { class: 'grid2', style: 'margin-top:8px' }, [
       el('button', {
         class: 'btn gold', type: 'button', text: '1回引く（1ペリカ）',
