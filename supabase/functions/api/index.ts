@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { constants, profile as profileLogic, rules } from './game-core.js';
 import { isSettled, rewardsForMatch } from './rewards.ts';
+import { socialRoute, type SocialStore } from './social.ts';
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -143,6 +144,180 @@ async function settleMatchRewards(db: any, match: any, onlyUserId?: string) {
   }
 }
 
+/* ───────────────────── 交友まわりの保管庫 ───────────────────── */
+
+/** プレイヤーコードは見間違えやすい文字（I・O・0・1）を外す。 */
+const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+function newPlayerCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return `TRIAD-${Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('')}`;
+}
+
+/**
+ * 名札（profiles）を用意する。資産は triad_profiles が持ち、こちらは
+ * 表示名・プレイヤーコード・最終接続だけを預かる交友用の台帳。
+ */
+async function ensureIdentity(db: any, userId: string) {
+  const now = new Date().toISOString();
+  const { data } = await db.from('profiles').select('player_code').eq('id', userId).maybeSingle();
+  if (data?.player_code) {
+    // 在席の判定はこの時刻だけを見るので、毎回そっと進めておく。
+    await db.from('profiles').update({ last_online_at: now }).eq('id', userId);
+    return;
+  }
+  // 名札が要るのは初回だけ。ここでだけ資産側から表示名を借りる。
+  const { profile } = await loadProfile(db, userId);
+  const display_name = String(profile?.name || '旅人').slice(0, 16);
+  // 重複したら引き直す。桁数から見て数回で必ず空きが見つかる。
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { error } = await db.from('profiles')
+      .upsert({ id: userId, display_name, player_code: newPlayerCode(), last_online_at: now });
+    if (!error) return;
+  }
+}
+
+const asMillis = (value: any) => (value ? new Date(value).getTime() : null);
+
+function createSocialStore(db: any): SocialStore {
+  /** 名札とゲーム資産を1人分にまとめる。 */
+  const rowsToPlayers = async (rows: any[]) => {
+    if (!rows.length) return [];
+    const ids = rows.map((r) => r.id);
+    const { data: games } = await db.from('triad_profiles').select('user_id,data').in('user_id', ids);
+    const byId = new Map((games || []).map((g: any) => [g.user_id, g.data]));
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.display_name || '旅人',
+      playerCode: r.player_code || '',
+      lastSeenAt: asMillis(r.last_online_at),
+      activeMatchId: r.active_match_id || null,
+      game: byId.get(r.id) || null,
+    }));
+  };
+  const one = async (rows: any[]) => (await rowsToPlayers(rows))[0] || null;
+  const PROFILE_COLS = 'id,display_name,player_code,last_online_at,active_match_id';
+
+  /** 自分が出ている対戦を新しい順に。件数が少ないうちは取得してから絞る。 */
+  const matchesOf = async (userId: string, playing: boolean, limit: number) => {
+    const { data } = await db.from('triad_matches').select('data').order('updated_at', { ascending: false }).limit(200);
+    return (data || [])
+      .map((r: any) => r.data)
+      .filter((m: any) => (playing ? m?.status === 'playing' : m?.status !== 'playing'))
+      .filter((m: any) => (m?.seatSnapshot || []).some((s: any) => s.userId === userId))
+      .slice(0, limit);
+  };
+
+  return {
+    async findById(id) {
+      const { data } = await db.from('profiles').select(PROFILE_COLS).eq('id', id).maybeSingle();
+      return data ? one([data]) : null;
+    },
+    async findByCode(code) {
+      const { data } = await db.from('profiles').select(PROFILE_COLS).eq('player_code', code).maybeSingle();
+      return data ? one([data]) : null;
+    },
+    async searchPlayers(q, limit) {
+      const like = `%${q.replace(/[%_]/g, '')}%`;
+      const { data } = await db.from('profiles').select(PROFILE_COLS)
+        .or(`player_code.ilike.${like},display_name.ilike.${like}`).limit(limit);
+      return rowsToPlayers(data || []);
+    },
+    async friendIdsOf(userId) {
+      const { data } = await db.from('friendships').select('user_a,user_b').or(`user_a.eq.${userId},user_b.eq.${userId}`);
+      return (data || []).map((f: any) => (f.user_a === userId ? f.user_b : f.user_a));
+    },
+    async pendingRequests(userId) {
+      const { data } = await db.from('friend_requests').select('id,sender_id,receiver_id')
+        .eq('status', 'PENDING').or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
+      return (data || []).map((r: any) => ({ requestId: r.id, senderId: r.sender_id, receiverId: r.receiver_id }));
+    },
+    async createRequest(senderId, receiverId) {
+      const { data, error } = await db.from('friend_requests')
+        .insert({ sender_id: senderId, receiver_id: receiverId, status: 'PENDING' }).select('id').single();
+      if (error) throw error;
+      return data.id;
+    },
+    async findRequest(requestId) {
+      const { data } = await db.from('friend_requests').select('id,sender_id,receiver_id,status').eq('id', requestId).maybeSingle();
+      return data ? { requestId: data.id, senderId: data.sender_id, receiverId: data.receiver_id, status: data.status } : null;
+    },
+    async settleRequest(requestId, status) {
+      await db.from('friend_requests').update({ status, responded_at: new Date().toISOString() }).eq('id', requestId);
+    },
+    async addFriendship(a, b) {
+      const [user_a, user_b] = [a, b].sort();
+      await db.from('friendships').upsert({ user_a, user_b }, { onConflict: 'user_a,user_b' });
+    },
+    async removeFriendship(a, b) {
+      const [x, y] = [a, b].sort();
+      await db.from('friendships').delete().eq('user_a', x).eq('user_b', y);
+    },
+    async notify(row) {
+      await db.from('notifications').insert({
+        user_id: row.userId,
+        type: row.type,
+        sender_id: row.senderId,
+        request_id: row.requestId ?? null,
+        invite_id: row.inviteId ?? null,
+        room_code: row.roomCode ?? null,
+        payload: row.payload || {},
+        is_read: false,
+        expires_at: row.expiresAt ? new Date(row.expiresAt).toISOString() : null,
+      });
+    },
+    async listNotifications(userId, limit) {
+      const { data } = await db.from('notifications')
+        .select('id,type,sender_id,request_id,invite_id,room_code,payload,is_read,created_at,expires_at')
+        .eq('user_id', userId).order('created_at', { ascending: false }).limit(limit);
+      return (data || []).map((n: any) => ({
+        id: n.id, type: n.type, senderId: n.sender_id, requestId: n.request_id,
+        inviteId: n.invite_id, roomCode: n.room_code, payload: n.payload,
+        isRead: !!n.is_read, at: asMillis(n.created_at) || 0, expiresAt: asMillis(n.expires_at),
+      }));
+    },
+    async markNotificationsRead(userId, ids) {
+      let q = db.from('notifications').update({ is_read: true }).eq('user_id', userId);
+      if (ids) q = q.in('id', ids);
+      await q;
+    },
+    async statsOf(userId) {
+      const { data } = await db.from('player_stats').select('*').eq('player_id', userId).maybeSingle();
+      return data || null;
+    },
+    async recentMatches(userId, limit) { return matchesOf(userId, false, limit); },
+    async liveMatchOf(userId) { return (await matchesOf(userId, true, 1))[0] || null; },
+    async findMatchById(matchId) {
+      const { data } = await db.from('triad_matches').select('data').eq('match_id', matchId).maybeSingle();
+      return data?.data || null;
+    },
+    async roomOf(userId) { return findRoom(db, userId); },
+    async addRoomMember(room, userId, charId) {
+      const { data } = await db.from('profiles').select('display_name').eq('id', userId).maybeSingle();
+      room.members.push({ playerId: userId, name: data?.display_name || '旅人', charId, ready: false });
+      await saveRoom(db, room);
+    },
+    async createInvite(senderId, receiverId, roomCode, expiresAt) {
+      const { data, error } = await db.from('match_invites').insert({
+        sender_id: senderId, receiver_id: receiverId, room_code: roomCode,
+        status: 'PENDING', expires_at: new Date(expiresAt).toISOString(),
+      }).select('id').single();
+      if (error) throw error;
+      return data.id;
+    },
+    async findInvite(inviteId) {
+      const { data } = await db.from('match_invites').select('id,sender_id,receiver_id,room_code,status,expires_at').eq('id', inviteId).maybeSingle();
+      return data ? {
+        inviteId: data.id, senderId: data.sender_id, receiverId: data.receiver_id,
+        roomCode: data.room_code, status: data.status, expiresAt: asMillis(data.expires_at),
+      } : null;
+    },
+    async settleInvite(inviteId, status) {
+      await db.from('match_invites').update({ status }).eq('id', inviteId);
+    },
+  };
+}
+
 async function mutateProfile(ctx: any, path: string, body: any, mutator: (draft: any) => any) {
   const requestId = String(body.requestId || '').slice(0, 128);
   if (!requestId) return { error: fail('request_id_required', '操作IDがありません。') };
@@ -173,6 +348,17 @@ async function saveRoom(db: any, room: any) {
 
 async function route(ctx: any, path: string, body: any) {
   const userId = ctx.user.id;
+  // 名札の用意と在席の記録。交友の画面はこの2つだけを頼りにしている。
+  await ensureIdentity(ctx.db, userId);
+
+  // フレンド・検索・通知・招待・観戦。扱わない経路では null が返るので素通りする。
+  const social = await socialRoute(createSocialStore(ctx.db), userId, path, body);
+  if (social) {
+    if ('fail' in social) return fail(social.fail.code, social.fail.message, await viewOf(ctx.db, userId));
+    const view = { ...await viewOf(ctx.db, userId), ...(social.view || {}) };
+    return success(view, social.result === undefined ? {} : { result: social.result });
+  }
+
   if (path === '/me' || path === '/world/poll') {
     // 決着の手を打てなかった人（負け・引き分け・回線が切れていた人）も、
     // 次の定期取得で自分の報酬を受け取れるようにする。
