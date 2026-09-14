@@ -514,6 +514,81 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
 .boss-show .boss-figure .char-art { filter: saturate(1.2) contrast(1.06); }
 .boss-show[data-kind="win"] .boss-figure .char-art { filter: saturate(.7) opacity(.85); }
 
+/* ───────── フレンド・通知・観戦（§18〜§20 §34 §64 §65） ─────────
+   320px 幅でも横スクロールが出ないよう、名前は省略、操作は折り返す。 */
+
+.icon-btn.bell { position: relative; font-size: 15px; }
+.icon-btn.bell[data-count]:not([data-count=""])::after {
+  content: attr(data-count);
+  position: absolute; top: -3px; right: -3px;
+  min-width: 16px; height: 16px; padding: 0 3px;
+  border-radius: 999px; background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.friend-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0; border-bottom: 1px solid var(--cream-2);
+}
+.friend-row:last-child { border-bottom: 0; }
+.friend-face { flex: 0 0 auto; width: 44px; height: 44px; }
+.friend-face svg { width: 100%; height: 100%; display: block; }
+.friend-name {
+  font-weight: 700; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.friend-meta { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-soft); }
+.friend-meta .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.friend-code {
+  font-size: 10px; color: var(--ink-soft); letter-spacing: .06em;
+  font-variant-numeric: tabular-nums;
+}
+.friend-actions {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  flex: 0 0 auto;
+}
+.friend-actions .btn { white-space: nowrap; }
+
+/* キャラクター使用割合（§42 §69）。横棒で、数値も必ず添える。 */
+.usage-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.usage-name {
+  flex: 0 0 4.5em; font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.usage-track {
+  flex: 1 1 auto; min-width: 0; height: 10px; border-radius: 5px;
+  background: var(--cream-2); overflow: hidden;
+}
+.usage-track > i { display: block; height: 100%; background: var(--green-500); }
+.usage-num {
+  flex: 0 0 3.2em; text-align: right; font-size: 12px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hist-row { padding: 8px 0; border-bottom: 1px solid var(--cream-2); }
+.hist-row:last-child { border-bottom: 0; }
+.hist-line { font-size: 12px; line-height: 1.5; }
+.hist-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.hist-badge.win { background: var(--green-100); color: var(--green-800); }
+.hist-badge.lose { background: #efd9d9; color: #7a2b2b; }
+.hist-badge.abort { background: #ddd6c4; color: #4b4433; }
+
+.notif-row { padding: 8px 0; border-bottom: 1px solid var(--cream-2); }
+.notif-row:last-child { border-bottom: 0; }
+.notif-row.unread { border-left: 3px solid var(--accent); padding-left: 8px; }
+/* 通知は名前が短いので、操作は横に並べたほうが読みやすい */
+.notif-row .friend-actions { flex-direction: row; flex-wrap: wrap; }
+
+@media (max-width: 360px) {
+  .friend-face { width: 36px; height: 36px; }
+  .usage-name { flex-basis: 3.6em; }
+  .friend-actions .btn.small { padding: 5px 8px; font-size: 11px; }
+}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -530,6 +605,7 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
       <span class="perica" id="perica-badge" title="ペリカ残高">
         <span class="perica-mark" aria-hidden="true">◎</span><span id="perica-value">0</span>
       </span>
+      <button class="icon-btn bell" id="notif-btn" type="button" aria-pressed="false" aria-label="通知" data-count="" hidden>🔔</button>
       <button class="icon-btn" id="mute-btn" type="button" aria-pressed="false" aria-label="ミュート切替">♪</button>
     </div>
   </header>
@@ -586,6 +662,7 @@ const { renderGacha } = __req("views/gacha.js");
 const { renderOnline } = __req("views/online.js");
 const { renderSettings } = __req("views/settings.js");
 const { renderRanking } = __req("views/ranking.js");
+const { renderFriends, renderNotifications, renderSpectate, resetFriendsView } = __req("views/friends.js");
 const { renderStory, resetStoryView, storyViewState, ambientKindOf } = __req("views/story.js");
 const { STAGE_BY_ID, CHAPTERS } = __req("../../shared/story/stages.js");
 const { pullGacha, trainCharacter, equipCosmetic, resetEquipToDefault, claimMission } = __req("../../shared/profile.js");
@@ -673,7 +750,10 @@ function activeNet() {
   return net;
 }
 
-const VIEW_PATHS = new Set(['play', 'chars', 'gacha', 'wardrobe', 'settings', 'online', 'missions', 'story', 'ranking']);
+const VIEW_PATHS = new Set([
+  'play', 'chars', 'gacha', 'wardrobe', 'settings', 'online', 'missions', 'story', 'ranking',
+  'friends', 'notifications',
+]);
 
 const VIEWS = {
   home: renderHome,
@@ -686,6 +766,9 @@ const VIEWS = {
   missions: renderMissions,
   story: renderStory,
   ranking: renderRanking,
+  friends: renderFriends,
+  notifications: renderNotifications,
+  spectate: renderSpectate,
 };
 
 /* ───────────────────────── ctx ───────────────────────── */
@@ -701,6 +784,9 @@ const ctx = {
     if (name === 'play' && app.view !== 'play' && !localStore.match) resetPlayMenu();
     // 物語から離れるときは画面状態を戻す（進行中の盤は保存に残る）
     if (app.view === 'story' && name !== 'story') resetStoryView();
+    // フレンド関連から完全に離れるときだけ、開いていた小画面を畳む
+    if (['friends', 'notifications', 'spectate'].includes(app.view)
+      && !['friends', 'notifications', 'spectate'].includes(name)) resetFriendsView();
     app.view = name;
     if (name !== 'gacha') app.gachaResult = null;
     syncUrl();
@@ -719,7 +805,12 @@ const ctx = {
   enterOnline() {
     if (!app.onlineKind || app.onlineKind === 'detecting') return;
     if (app.mode !== 'ONLINE') app.mode = 'ONLINE';
-    activeNet().connect();
+    // connect() は取得を1回走らせる。取得が終わると画面が描き直され、
+    // そこから また enterOnline() が呼ばれるので、無条件に繋ぐと
+    // 「描画→取得→描画」が途切れなく回り続けてしまう。
+    // つながっていないときだけ繋ぐ。定期取得は connect() の中で自走する。
+    const n = activeNet();
+    if (n.status === 'offline') n.connect();
   },
   /** 共有URLの土台。検証済みの本番URLがあればそれを使う。 */
   baseUrl() {
@@ -836,6 +927,17 @@ function render() {
   badge.dataset.mode = app.mode;
   ctx.syncMute();
 
+  // 通知のベル（世界対戦のときだけ出す）。未読件数はサーバーの値をそのまま出す（§34）。
+  const bell = document.getElementById('notif-btn');
+  if (bell) {
+    const world = app.onlineKind === 'supabase' && app.mode === 'ONLINE';
+    bell.hidden = !world;
+    const unread = world ? (supaNet.view?.unread ?? 0) : 0;
+    bell.dataset.count = unread > 0 ? String(Math.min(unread, 99)) : '';
+    bell.setAttribute('aria-label', unread > 0 ? `通知 未読${unread}件` : '通知');
+    bell.setAttribute('aria-pressed', app.view === 'notifications' ? 'true' : 'false');
+  }
+
   // ナビ
   for (const b of document.querySelectorAll('#app-nav button')) {
     const active = b.dataset.view === app.view
@@ -930,6 +1032,7 @@ function boot() {
     audio.setSettings({ muted: !audio.settings.muted });
     ctx.syncMute();
   });
+  document.getElementById('notif-btn')?.addEventListener('click', () => ctx.setView('notifications'));
 
   // 最初のユーザー操作で音を開始する
   const unlock = () => {
@@ -8258,6 +8361,8 @@ function renderHome(root, ctx) {
     ]),
   ]));
 
+  if (ctx.onlineKind === 'supabase') root.appendChild(friendsCard(ctx));
+
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: 'ゲームを共有' }),
     el('p', { class: 'muted', text: 'このURLを送るだけで、相手は登録・インストールなしでそのまま遊べます。対戦部屋への招待URLは、オンライン画面の待合室から共有できます。' }),
@@ -8282,6 +8387,28 @@ function renderHome(root, ctx) {
 
 function renderMissions(root, ctx) {
   root.appendChild(missionCard(ctx, 99));
+}
+
+/** 交流（§18：画面下ナビが混雑するので、ホームからの入口にする） */
+function friendsCard(ctx) {
+  const v = ctx.app.mode === 'ONLINE' ? ctx.net.view : null;
+  const unread = v?.unread ?? 0;
+  return el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '交流' }),
+    el('div', { class: 'kv' }, [
+      el('span', { text: 'あなたのプレイヤーコード' }),
+      el('b', { style: 'letter-spacing:.08em', text: v?.playerCode || '—' }),
+    ]),
+    el('div', { class: 'grid2', style: 'margin-top:8px' }, [
+      el('button', { class: 'btn sub', type: 'button', text: 'フレンド', onclick: () => ctx.setView('friends') }),
+      el('button', {
+        class: 'btn sub', type: 'button',
+        text: unread ? `通知（${unread}）` : '通知',
+        onclick: () => ctx.setView('notifications'),
+      }),
+    ]),
+    el('p', { class: 'muted', text: 'プレイヤーコードを相手に伝えると、検索してフレンド申請してもらえます。フレンドのオンライン状態を見たり、フレンド限定の部屋へ招待したりできます。' }),
+  ]);
 }
 
 function storyCard(ctx) {
@@ -10291,6 +10418,7 @@ __def("views/online.js", function (__req) {
 /** オンライン参加 / 待合室 */
 
 const { el, toast, confirmDialog } = __req("util.js");
+const { inviteFriendsCard, resetInvited } = __req("views/friends.js");
 const { characterSvg } = __req("art.js");
 const { CHARACTERS, DEFAULT_EQUIP, ROOM_CAPACITY } = __req("../../shared/constants.js");
 
@@ -10408,12 +10536,25 @@ function renderOnline(root, ctx) {
 
   if (world) renderWorldMatch(root, ctx, view);
 
+  // 公開範囲（§13 §63）。世界対戦のときだけ「フレンドのみ」を選べる。
+  const visChips = world ? el('div', { class: 'chips', style: 'margin-bottom:8px' }, [
+    ['private', '非公開'], ['friends', 'フレンドのみ'], ['public', '公開'],
+  ].map(([id, label]) => el('button', {
+    class: 'chip', type: 'button', text: label,
+    'aria-pressed': (ctx.app.roomVisibility || 'private') === id ? 'true' : 'false',
+    onclick: () => { ctx.app.roomVisibility = id; ctx.refresh(); },
+  }))) : null;
+
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: world ? 'ルーム（相手を指定して遊ぶ）' : 'ルーム' }),
+    visChips,
+    world ? el('p', { class: 'muted', text: visibilityHelp(ctx.app.roomVisibility || 'private') }) : null,
     el('button', {
       class: 'btn block', type: 'button', text: 'ルームを作る',
       onclick: async () => {
-        const r = await ctx.net.post('/api/room/create', { charId: ctx.app.onlineChar }, { durable: false });
+        const body = { charId: ctx.app.onlineChar };
+        if (world) body.visibility = ctx.app.roomVisibility || 'private';
+        const r = await ctx.net.post('/api/room/create', body, { durable: false });
         if (!r.ok) toast(r.message || 'ルームを作成できませんでした。', 'error');
         ctx.refresh();
       },
@@ -10612,6 +10753,14 @@ function renderLocalOnlyNotice(root, ctx) {
   ]));
 }
 
+function visibilityHelp(v) {
+  if (v === 'friends') return 'フレンドだけが参加できます。作成後に一覧から招待できます。コードを知っていてもフレンドでなければ入れません。';
+  if (v === 'public') return '誰でも参加できます。空きがあれば知らない人が自動で入り、3人そろうと自動で始まります。';
+  return 'ルームコードか招待URLを知っている人だけが参加できます。';
+}
+
+const VIS_LABEL = { public: '公開', friends: 'フレンドのみ', private: '非公開' };
+
 function renderLobby(root, ctx, view) {
   const room = view.room;
   const p = view.profile;
@@ -10622,7 +10771,13 @@ function renderLobby(root, ctx, view) {
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: '待合室' }),
     el('div', { class: 'kv' }, [el('span', { text: 'ルームコード' }), el('b', { style: 'letter-spacing:.2em;font-size:20px', text: room.code })]),
-    el('p', { class: 'muted', text: 'このコードを他の2人に伝えてください。参加順がそのまま席順（P1・P2・P3）になります。' }),
+    el('div', { class: 'kv' }, [
+      el('span', { text: '公開範囲' }),
+      el('b', { text: VIS_LABEL[room.visibility] || '非公開' }),
+    ]),
+    el('p', { class: 'muted', text: room.visibility === 'friends'
+      ? 'フレンドだけが参加できます。参加順がそのまま席順（P1・P2・P3）になります。'
+      : 'このコードを他の2人に伝えてください。参加順がそのまま席順（P1・P2・P3）になります。' }),
     el('div', { style: 'margin-top:8px' }, room.members.map((m, i) => el('div', { class: 'kv' }, [
       el('span', { text: `P${i + 1} ${m.name}${m.isYou ? '（あなた）' : ''}${room.hostId === m.userId ? '／ホスト' : ''}` }),
       el('b', { text: `${m.connected ? '' : '切断中・'}${m.ready ? '準備完了' : '準備中'}` }),
@@ -10667,26 +10822,683 @@ function renderLobby(root, ctx, view) {
         },
       }),
     ]),
-    el('button', {
+    room.visibility === 'friends' ? null : el('button', {
       class: 'btn sub block', type: 'button', style: 'margin-top:8px',
       text: '招待URLを共有（この部屋）',
       onclick: () => ctx.share('invite', room.code),
     }),
-    el('p', { class: 'muted', text: `招待URL：${ctx.inviteUrl(room.code)}　このURLを開くと、登録なしでこの部屋に参加できます。` }),
+    room.visibility === 'friends'
+      ? el('p', { class: 'muted', text: 'フレンド限定のため招待URLは配りません。下の一覧からフレンドを招待してください。' })
+      : el('p', { class: 'muted', text: `招待URL：${ctx.inviteUrl(room.code)}　このURLを開くと、登録なしでこの部屋に参加できます。` }),
     el('button', {
       class: 'btn sub block', type: 'button', style: 'margin-top:8px', text: 'ルームから退出',
       onclick: async () => {
         const yes = await confirmDialog({ title: 'ルームから退出しますか', message: '対戦中の場合は即時中止となり、全員の報酬は0になります。', confirmLabel: '退出する', danger: true });
         if (!yes) return;
         await ctx.net.post('/api/room/leave', {}, { durable: false });
+        resetInvited();
         ctx.refresh();
       },
     }),
     el('p', { class: 'muted', text: '全員が接続中かつ準備完了のときだけ、ホストが開始できます。ホストが待合室を離れた場合は残るメンバーの先頭へホストが移ります。' }),
   ]));
+
+  // フレンド限定ルームでは、一覧から名指しで招く（§29 §63）
+  if (room.visibility === 'friends' && room.status === 'lobby') {
+    root.appendChild(inviteFriendsCard(ctx, room));
+  }
 }
 
 return { renderOnline, joinErrorMessage };
+});
+__def("views/friends.js", function (__req) {
+/**
+ * フレンド・通知・観戦（仕様書 §18〜§20 §34 §45〜§51 §63 §64）。
+ *
+ * 表示している値はすべてサーバーの返答そのまま。ここでは勝敗も所持も作らない。
+ * 相手の指定にはプレイヤーコードだけを使う（Auth の UUID は受け取らない：§21 §56）。
+ */
+
+const { el, toast, confirmDialog, showUrlDialog, dateLabel } = __req("util.js");
+const { characterSvg } = __req("art.js");
+const { BoardView } = __req("board.js");
+const { CHARACTER_BY_ID, DEFAULT_EQUIP } = __req("../../shared/constants.js");
+
+/**
+ * 取得したものは画面側で持つ。
+ * net.view は取得のたびに丸ごと差し替わるので、そこへ置くと定期取得で消える。
+ */
+const state = {
+  tab: 'list',        // list | requests | search
+  friends: null,
+  requests: null,
+  search: null,
+  searchQ: '',
+  profileCode: null,
+  profile: null,
+  notifications: null,
+  spectateId: null,
+  spectate: null,
+  busy: new Set(),
+};
+
+function resetFriendsView() {
+  state.tab = 'list';
+  state.profileCode = null;
+  state.profile = null;
+  state.spectateId = null;
+  state.spectate = null;
+}
+
+/* ───────────────────────── 取得の下ごしらえ ───────────────────────── */
+
+/** 同じ要求を重ねて投げない。終わったら描き直す。 */
+function load(ctx, key, path, body, apply) {
+  if (state.busy.has(key)) return;
+  state.busy.add(key);
+  ctx.net.post(path, body, { durable: false })
+    .then((r) => {
+      if (r.ok) apply(r.data.view);
+      else if (r.code !== 'rate_limited') toast(r.message || '取得できませんでした。', 'error');
+    })
+    .finally(() => { state.busy.delete(key); ctx.refresh(); });
+}
+
+/** 世界対戦の接続でしか使えない画面の共通の断り書き。 */
+function needsWorld(root, ctx, title) {
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: title }),
+    el('div', { class: 'notice', text: `${title}は世界対戦（サーバー接続）のときだけ使えます。` }),
+    el('button', { class: 'btn sub block', type: 'button', text: 'オンライン画面へ', onclick: () => ctx.setView('online') }),
+  ]));
+}
+
+const STATUS_LABEL = { ONLINE: 'オンライン', IN_MATCH: '対戦中', OFFLINE: 'オフライン' };
+const STATUS_DOT = { ONLINE: '#2e9e5b', IN_MATCH: '#c9a227', OFFLINE: '#b6b0a0' };
+
+/** 「5分前」「2時間前」「昨日」。位置やIPのような情報は出さない（§28）。 */
+function agoLabel(ts) {
+  if (!ts) return '';
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'たった今';
+  if (s < 3600) return `${Math.floor(s / 60)}分前`;
+  if (s < 86400) return `${Math.floor(s / 3600)}時間前`;
+  if (s < 172800) return '昨日';
+  return `${Math.floor(s / 86400)}日前`;
+}
+
+/** 一覧に並べる1人分。押せる操作は相手の状態で変わる。 */
+function playerRow(ctx, p, actions = []) {
+  const eq = DEFAULT_EQUIP;
+  return el('div', { class: 'friend-row' }, [
+    el('div', {
+      class: 'friend-face',
+      html: p.charId ? characterSvg(p.charId, eq, { size: 44 }) : '',
+    }),
+    el('div', { class: 'grow', style: 'min-width:0' }, [
+      el('div', { class: 'friend-name', text: p.name || '旅人' }),
+      el('div', { class: 'friend-meta' }, [
+        el('span', { class: 'dot', style: `background:${STATUS_DOT[p.status] || STATUS_DOT.OFFLINE}` }),
+        el('span', { text: STATUS_LABEL[p.status] || 'オフライン' }),
+        p.status === 'OFFLINE' && p.lastSeenAt ? el('span', { class: 'muted', text: agoLabel(p.lastSeenAt) }) : null,
+      ]),
+      el('div', { class: 'friend-code', text: p.playerCode }),
+    ]),
+    el('div', { class: 'friend-actions' }, actions.filter(Boolean)),
+  ]);
+}
+
+/* ───────────────────────── フレンド画面 ───────────────────────── */
+
+function renderFriends(root, ctx) {
+  if (ctx.onlineKind !== 'supabase') return needsWorld(root, ctx, 'フレンド');
+  ctx.enterOnline();
+
+  if (state.profileCode) return renderProfile(root, ctx);
+
+  const me = ctx.net.view?.playerCode || null;
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: 'フレンド' }),
+    el('div', { class: 'kv' }, [
+      el('span', { text: 'あなたのプレイヤーコード' }),
+      el('b', { style: 'letter-spacing:.08em', text: me || '—' }),
+    ]),
+    el('p', { class: 'muted', text: 'このコードを相手に伝えると、検索して申請してもらえます。' }),
+    me ? el('button', {
+      class: 'btn sub small', type: 'button', text: 'コードを表示して渡す',
+      onclick: () => showUrlDialog({ title: 'あなたのプレイヤーコード', url: me }),
+    }) : null,
+  ]));
+
+  const pendingIn = state.friends?.pendingIn ?? 0;
+  root.appendChild(el('div', { class: 'chips', style: 'margin-bottom:12px' }, [
+    tabChip('list', 'フレンド'),
+    tabChip('requests', pendingIn ? `申請 (${pendingIn})` : '申請'),
+    tabChip('search', 'さがす'),
+  ].map((b) => { b.onclick = () => { state.tab = b.dataset.tab; ctx.refresh(); }; return b; })));
+
+  if (state.tab === 'list') return friendListCard(root, ctx);
+  if (state.tab === 'requests') return requestsCard(root, ctx);
+  return searchCard(root, ctx);
+}
+
+function tabChip(id, label) {
+  const b = el('button', { class: 'chip', type: 'button', text: label });
+  b.dataset.tab = id;
+  b.setAttribute('aria-pressed', state.tab === id ? 'true' : 'false');
+  return b;
+}
+
+function friendListCard(root, ctx) {
+  if (!state.friends) {
+    load(ctx, 'list', '/api/friends/list', {}, (v) => { state.friends = v.friends; });
+  }
+  const list = state.friends?.friends || [];
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: `フレンド ${list.length ? `(${list.length})` : ''}` }),
+    !state.friends
+      ? el('p', { class: 'muted', text: '読み込んでいます…' })
+      : list.length === 0
+        ? el('p', { class: 'muted', text: 'まだフレンドがいません。「さがす」からプレイヤーコードで申請できます。' })
+        : el('div', {}, list.map((p) => playerRow(ctx, p, [
+          el('button', {
+            class: 'btn small', type: 'button', text: 'プロフィール',
+            onclick: () => { state.profileCode = p.playerCode; state.profile = null; ctx.refresh(); },
+          }),
+          p.status === 'IN_MATCH'
+            ? el('button', {
+              class: 'btn sub small', type: 'button', text: '観戦',
+              onclick: () => openSpectate(ctx, { playerCode: p.playerCode }),
+            })
+            : null,
+        ]))),
+    el('button', {
+      class: 'btn sub block', type: 'button', style: 'margin-top:10px', text: '更新',
+      onclick: () => { state.friends = null; ctx.refresh(); },
+    }),
+  ]));
+}
+
+function requestsCard(root, ctx) {
+  if (!state.requests) {
+    load(ctx, 'req', '/api/friends/requests', {}, (v) => { state.requests = v.friendRequests; });
+  }
+  const inc = state.requests?.incoming || [];
+  const out = state.requests?.outgoing || [];
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '届いている申請' }),
+    !state.requests
+      ? el('p', { class: 'muted', text: '読み込んでいます…' })
+      : inc.length === 0
+        ? el('p', { class: 'muted', text: '届いている申請はありません。' })
+        : el('div', {}, inc.map((r) => playerRow(ctx, r.player, [
+          el('button', {
+            class: 'btn small', type: 'button', text: '承認',
+            onclick: () => respond(ctx, r.requestId, true),
+          }),
+          el('button', {
+            class: 'btn sub small', type: 'button', text: '拒否',
+            onclick: () => respond(ctx, r.requestId, false),
+          }),
+        ]))),
+  ]));
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '送った申請' }),
+    out.length === 0
+      ? el('p', { class: 'muted', text: '返事待ちの申請はありません。' })
+      : el('div', {}, out.map((r) => playerRow(ctx, r.player, [
+        el('span', { class: 'pill N', text: '返事待ち' }),
+      ]))),
+  ]));
+}
+
+async function respond(ctx, requestId, accept) {
+  const r = await ctx.net.post('/api/friends/respond', { requestId, accept }, { durable: false });
+  if (!r.ok) toast(r.message || '応答できませんでした。', 'error');
+  else toast(accept ? 'フレンドになりました。' : '申請を拒否しました。');
+  state.requests = null;
+  state.friends = null;
+  state.notifications = null;
+  ctx.refresh();
+}
+
+function searchCard(root, ctx) {
+  const input = el('input', {
+    type: 'text', class: 'code-input', placeholder: 'TRIAD-XXXXXX',
+    inputmode: 'latin', autocapitalize: 'characters', value: state.searchQ,
+    style: 'letter-spacing:.06em',
+  });
+  const run = () => {
+    const q = String(input.value || '').trim();
+    if (q.length < 2) { toast('2文字以上で検索してください。', 'error'); return; }
+    state.searchQ = q;
+    state.search = null;
+    load(ctx, 'search', '/api/player/search', { q }, (v) => { state.search = v.search; });
+  };
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: 'プレイヤーをさがす' }),
+    el('label', { class: 'field' }, [
+      el('span', { text: 'プレイヤーコード または 名前' }),
+      input,
+    ]),
+    el('button', { class: 'btn block', type: 'button', text: 'さがす', onclick: run }),
+    el('p', { class: 'muted', text: '同じ名前の人がいてもプレイヤーコードで見分けられます。' }),
+  ]));
+
+  if (!state.search) return;
+  const found = state.search.players || [];
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: `検索結果 (${found.length})` }),
+    found.length === 0
+      ? el('p', { class: 'muted', text: '見つかりませんでした。プレイヤーコードを確かめてください。' })
+      : el('div', {}, found.map((p) => playerRow(ctx, p, [
+        p.relation === 'FRIEND' ? el('span', { class: 'pill N', text: 'フレンド' })
+          : p.relation === 'REQUEST_SENT' ? el('span', { class: 'pill N', text: '申請済' })
+            : p.relation === 'REQUEST_RECEIVED' ? el('button', {
+              class: 'btn small', type: 'button', text: '申請が届いています',
+              onclick: () => { state.tab = 'requests'; state.requests = null; ctx.refresh(); },
+            })
+              : el('button', {
+                class: 'btn small', type: 'button', text: 'フレンド申請',
+                onclick: async () => {
+                  const r = await ctx.net.post('/api/friends/request', { playerCode: p.playerCode }, { durable: false });
+                  if (!r.ok) toast(r.message || '申請できませんでした。', 'error');
+                  else toast('フレンド申請を送りました。');
+                  state.search = null;
+                  if (state.searchQ) load(ctx, 'search', '/api/player/search', { q: state.searchQ }, (v) => { state.search = v.search; });
+                  ctx.refresh();
+                },
+              }),
+      ]))),
+  ]));
+}
+
+/* ───────────────── フレンドプロフィールと直近20戦（§36〜§44 §64） ───────────────── */
+
+function renderProfile(root, ctx) {
+  const code = state.profileCode;
+  if (!state.profile) {
+    load(ctx, 'profile', '/api/friends/profile', { playerCode: code }, (v) => { state.profile = v.friendProfile; });
+  }
+  const d = state.profile;
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('button', {
+      class: 'btn sub small', type: 'button', text: '← フレンド一覧へ',
+      onclick: () => { state.profileCode = null; state.profile = null; ctx.refresh(); },
+    }),
+  ]));
+
+  if (!d) {
+    root.appendChild(el('div', { class: 'card' }, [el('p', { class: 'muted', text: '読み込んでいます…' })]));
+    return;
+  }
+
+  const p = d.player;
+  root.appendChild(el('div', { class: 'card' }, [
+    el('div', { class: 'row', style: 'align-items:flex-start;gap:10px' }, [
+      el('div', { html: p.charId ? characterSvg(p.charId, DEFAULT_EQUIP, { size: 84 }) : '' }),
+      el('div', { class: 'grow', style: 'min-width:0' }, [
+        el('div', { style: 'font-family:var(--font);font-size:17px', text: p.name }),
+        el('div', { class: 'friend-meta' }, [
+          el('span', { class: 'dot', style: `background:${STATUS_DOT[p.status]}` }),
+          el('span', { text: STATUS_LABEL[p.status] }),
+          p.status === 'OFFLINE' && p.lastSeenAt ? el('span', { class: 'muted', text: agoLabel(p.lastSeenAt) }) : null,
+        ]),
+        el('div', { class: 'friend-code', text: p.playerCode }),
+        el('div', { class: 'muted', text: `プレイヤーLv ${p.level}${p.charName ? `／よく使う ${p.charName}` : ''}` }),
+      ]),
+    ]),
+    el('div', { class: 'grid2', style: 'margin-top:10px' }, [
+      d.spectatable ? el('button', {
+        class: 'btn', type: 'button', text: '観戦する',
+        onclick: () => openSpectate(ctx, { playerCode: p.playerCode }),
+      }) : null,
+      p.self ? null : el('button', {
+        class: 'btn sub', type: 'button', text: 'フレンド解除',
+        onclick: async () => {
+          const ok = await confirmDialog({
+            title: 'フレンドを解除しますか',
+            message: `${p.name}（${p.playerCode}）とのフレンドを解除します。フレンド限定ルームへの参加と観戦ができなくなります。これまでの対戦記録は消えません。`,
+            confirmLabel: '解除する', danger: true,
+          });
+          if (!ok) return;
+          const r = await ctx.net.post('/api/friends/remove', { playerCode: p.playerCode }, { durable: false });
+          if (!r.ok) { toast(r.message || '解除できませんでした。', 'error'); return; }
+          toast('フレンドを解除しました。');
+          state.profileCode = null; state.profile = null; state.friends = null;
+          ctx.refresh();
+        },
+      }),
+    ]),
+  ]));
+
+  const s = d.summary;
+  const st = d.stats || {};
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '通算' }),
+    el('div', { class: 'kv' }, [el('span', { text: '対戦数' }), el('b', { text: String(st.total_matches ?? 0) })]),
+    el('div', { class: 'kv' }, [el('span', { text: '勝ち／負け' }), el('b', { text: `${st.wins ?? 0} / ${st.losses ?? 0}` })]),
+    el('div', { class: 'kv' }, [el('span', { text: '五目で勝った数' }), el('b', { text: String(st.gomoku_wins ?? 0) })]),
+    el('div', { class: 'kv' }, [el('span', { text: '最少石数で勝った数' }), el('b', { text: String(st.min_stone_wins ?? 0) })]),
+  ]));
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: `直近${s.total}戦` }),
+    s.total === 0
+      ? el('p', { class: 'muted', text: 'まだオンライン対戦の記録がありません。' })
+      : el('div', {}, [
+        el('div', { class: 'kv' }, [el('span', { text: '勝ち／負け' }), el('b', { text: `${s.wins} / ${s.losses}` })]),
+        el('div', { class: 'kv' }, [el('span', { text: '勝率' }), el('b', { text: `${s.winRate}%` })]),
+        el('div', { class: 'kv' }, [el('span', { text: '平均決着手数' }), el('b', { text: s.avgTurns ? `${s.avgTurns}手` : '—' })]),
+        el('div', { class: 'kv' }, [el('span', { text: '平均スキル使用' }), el('b', { text: `${s.avgSkills}回` })]),
+        s.aborted ? el('div', { class: 'kv' }, [el('span', { text: '中止になった対戦' }), el('b', { text: `${s.aborted}戦` })]) : null,
+        el('p', { class: 'muted', text: '中止になった対戦は勝率と平均手数に数えていません。' }),
+      ]),
+  ]));
+
+  if (s.total > 0) root.appendChild(usageCard(s));
+  if (s.total > 0) root.appendChild(historyCard(d.recent));
+}
+
+/** キャラクター使用割合（§42 §69）。スマホ縦画面で読める横棒にする。 */
+function usageCard(s) {
+  return el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: 'キャラクター使用割合' }),
+    el('div', {}, s.usage.map((u) => el('div', { class: 'usage-row' }, [
+      el('div', { class: 'usage-name', text: u.charName }),
+      el('div', { class: 'usage-track' }, [
+        el('i', { style: `width:${Math.max(2, u.percent)}%` }),
+      ]),
+      el('div', { class: 'usage-num', text: `${u.percent}%` }),
+    ]))),
+    el('p', { class: 'muted', text: `対象 ${s.total} 戦。最多は ${s.topChar ? `${s.topChar.charName} ${s.topChar.percent}%` : '—'}。` }),
+  ]);
+}
+
+const OUTCOME = {
+  win: { label: '勝利', cls: 'win' },
+  draw: { label: '同率勝利', cls: 'win' },
+  lose: { label: '敗北', cls: 'lose' },
+  aborted: { label: '中止', cls: 'abort' },
+};
+const REASON = {
+  five: '五目', min_stones: '最少石数', resign: '投了',
+  disconnect_timeout: '切断', player_left: '退出',
+};
+
+function historyCard(rows) {
+  return el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '対戦履歴' }),
+    el('div', {}, rows.map((m) => {
+      const o = OUTCOME[m.outcome] || OUTCOME.aborted;
+      return el('div', { class: 'hist-row' }, [
+        el('div', { class: 'row', style: 'justify-content:space-between;gap:6px' }, [
+          el('span', { class: `hist-badge ${o.cls}`, text: o.label }),
+          el('span', { class: 'muted', text: m.finishedAt ? dateLabel(m.finishedAt) : '' }),
+        ]),
+        el('div', { class: 'hist-line', text: [
+          m.charName,
+          m.outcome === 'aborted' ? null : `${m.turns}手`,
+          m.reason ? (REASON[m.reason] || m.reason) : null,
+          m.skills.length ? m.skills.map((k) => `${k.name}${k.count}回`).join('・') : 'スキルなし',
+        ].filter(Boolean).join('　') }),
+        m.opponents.length
+          ? el('div', { class: 'muted', text: `対戦相手：${m.opponents.map((x) => `${x.name}（${x.charName}）`).join('、')}` })
+          : null,
+      ]);
+    })),
+  ]);
+}
+
+/* ───────────────────────── 通知（§34 §35） ───────────────────────── */
+
+function renderNotifications(root, ctx) {
+  if (ctx.onlineKind !== 'supabase') return needsWorld(root, ctx, '通知');
+  ctx.enterOnline();
+
+  if (!state.notifications) {
+    load(ctx, 'notif', '/api/notifications', {}, (v) => { state.notifications = v.notifications; });
+  }
+  const d = state.notifications;
+  const list = d?.notifications || [];
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('div', { class: 'row', style: 'justify-content:space-between' }, [
+      el('h2', { class: 'section-title', style: 'margin:0', text: `通知 ${d?.unread ? `(${d.unread})` : ''}` }),
+      d?.unread ? el('button', {
+        class: 'btn sub small', type: 'button', text: 'すべて既読',
+        onclick: async () => {
+          await ctx.net.post('/api/notifications/read', { all: true }, { durable: false });
+          state.notifications = null;
+          ctx.refresh();
+        },
+      }) : null,
+    ]),
+    !d
+      ? el('p', { class: 'muted', text: '読み込んでいます…' })
+      : list.length === 0
+        ? el('p', { class: 'muted', text: '通知はありません。' })
+        : el('div', {}, list.map((n) => notificationRow(ctx, n))),
+  ]));
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('button', { class: 'btn sub block', type: 'button', text: 'フレンド画面へ', onclick: () => ctx.setView('friends') }),
+  ]));
+}
+
+function notificationRow(ctx, n) {
+  const who = n.from?.name || n.payload?.name || '旅人';
+  const text = n.type === 'FRIEND_REQUEST' ? `${who}さんからフレンド申請が届きました。`
+    : n.type === 'FRIEND_ACCEPTED' ? `${who}さんがフレンド申請を承認しました。`
+      : `${who}さんから対戦に招待されました。`;
+  const expired = n.expiresAt && n.expiresAt < Date.now();
+
+  const actions = [];
+  if (n.type === 'FRIEND_REQUEST' && n.requestId) {
+    actions.push(el('button', { class: 'btn small', type: 'button', text: '承認', onclick: () => respond(ctx, n.requestId, true) }));
+    actions.push(el('button', { class: 'btn sub small', type: 'button', text: '拒否', onclick: () => respond(ctx, n.requestId, false) }));
+  }
+  if (n.type === 'MATCH_INVITE' && n.inviteId) {
+    if (expired) {
+      actions.push(el('span', { class: 'pill N', text: '期限切れ' }));
+    } else {
+      actions.push(el('button', {
+        class: 'btn small', type: 'button', text: '参加する',
+        onclick: () => acceptInvite(ctx, n.inviteId),
+      }));
+      actions.push(el('button', {
+        class: 'btn sub small', type: 'button', text: '断る',
+        onclick: async () => {
+          const r = await ctx.net.post('/api/invite/respond', { inviteId: n.inviteId, accept: false }, { durable: false });
+          if (!r.ok) toast(r.message || '応答できませんでした。', 'error');
+          state.notifications = null;
+          ctx.refresh();
+        },
+      }));
+    }
+  }
+
+  return el('div', { class: `notif-row${n.isRead ? '' : ' unread'}` }, [
+    el('div', { class: 'hist-line', text }),
+    n.type === 'MATCH_INVITE' && n.payload?.members
+      ? el('div', { class: 'muted', text: `現在 ${n.payload.members} / ${n.payload.capacity || 3}人` })
+      : null,
+    el('div', { class: 'row', style: 'justify-content:space-between;gap:6px;margin-top:4px' }, [
+      el('span', { class: 'muted', text: agoLabel(n.at) }),
+      el('div', { class: 'friend-actions' }, actions),
+    ]),
+  ]);
+}
+
+/** 招待から参加する。対戦中なら、いまの盤から勝手に移動しない（§35）。 */
+async function acceptInvite(ctx, inviteId) {
+  const v = ctx.net.view;
+  if (v?.match && v.match.status === 'playing') {
+    toast('現在対戦中のため参加できません。', 'error');
+    return;
+  }
+  const p = v?.profile;
+  const charId = ctx.app.onlineChar && p?.chars?.[ctx.app.onlineChar]?.owned
+    ? ctx.app.onlineChar
+    : (p?.lastCharId && p.chars?.[p.lastCharId]?.owned ? p.lastCharId : Object.keys(p?.chars || {}).find((k) => p.chars[k].owned));
+  const r = await ctx.net.post('/api/invite/respond', { inviteId, accept: true, charId }, { durable: false });
+  if (!r.ok) { toast(r.message || '参加できませんでした。', 'error'); state.notifications = null; ctx.refresh(); return; }
+  state.notifications = null;
+  toast('ルームに参加しました。');
+  ctx.setView('online');
+}
+
+/* ───────────────────────── 観戦（§45〜§51） ───────────────────────── */
+
+function openSpectate(ctx, { playerCode = null, matchId = null }) {
+  state.spectateId = matchId;
+  state.spectate = null;
+  state.spectateFor = playerCode;
+  ctx.setView('spectate');
+}
+
+function renderSpectate(root, ctx) {
+  if (ctx.onlineKind !== 'supabase') return needsWorld(root, ctx, '観戦');
+  ctx.enterOnline();
+
+  const body = state.spectateId ? { matchId: state.spectateId } : { playerCode: state.spectateFor };
+  if (!state.spectate) {
+    load(ctx, 'spec', '/api/spectate', body, (v) => {
+      state.spectate = v.spectate;
+      if (v.spectate?.matchId) state.spectateId = v.spectate.matchId;
+    });
+  }
+
+  const back = el('button', {
+    class: 'btn sub small', type: 'button', text: '← 戻る',
+    onclick: () => { state.spectate = null; state.spectateId = null; ctx.setView('friends'); },
+  });
+  root.appendChild(el('div', { class: 'card' }, [
+    el('div', { class: 'row', style: 'justify-content:space-between' }, [
+      back,
+      el('span', { class: 'pill new', text: '観戦中' }),
+    ]),
+  ]));
+
+  const d = state.spectate;
+  if (!d) {
+    root.appendChild(el('div', { class: 'card' }, [el('p', { class: 'muted', text: '読み込んでいます…' })]));
+    return;
+  }
+
+  const st = d.state || {};
+  const finished = d.status !== 'playing';
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '対戦者' }),
+    el('div', {}, d.players.map((pl) => el('div', { class: 'kv' }, [
+      el('span', { text: `席${pl.seat}　${pl.name}（${pl.charName}）${pl.connected ? '' : '［切断中］'}` }),
+      el('b', { text: st.turn === pl.seat && !finished ? '手番' : `エナジー ${st.energy?.[pl.seat] ?? '—'}` }),
+    ]))),
+    el('div', { class: 'kv' }, [el('span', { text: '総手数' }), el('b', { text: `${d.turns}手` })]),
+    el('div', { class: 'kv' }, [el('span', { text: '状態' }), el('b', { text: finished ? '終了' : '進行中' })]),
+  ]));
+
+  // 盤面は読み取り専用。押しても何も起きない（onPick を渡さない：§46）
+  const scroll = el('div', { class: 'board-scroll' });
+  root.appendChild(el('div', { class: 'card' }, [el('div', { class: 'board-wrap' }, [scroll])]));
+  try {
+    new BoardView(scroll, {}).render(st, { interactive: false });
+  } catch (e) {
+    scroll.appendChild(el('div', { class: 'notice error', text: `盤面を描画できませんでした：${e.message}` }));
+  }
+
+  if (finished) {
+    const winners = st.result?.winners || (st.result?.winner ? [st.result.winner] : []);
+    const names = d.players.filter((p) => winners.includes(p.seat)).map((p) => p.name);
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h2', { class: 'section-title', text: '対戦終了' }),
+      el('div', { class: 'kv' }, [el('span', { text: '勝者' }), el('b', { text: names.length ? names.join('、') : '—' })]),
+      el('div', { class: 'kv' }, [el('span', { text: '決着' }), el('b', { text: REASON[d.resultType] || d.resultType || '—' })]),
+      el('div', { class: 'kv' }, [el('span', { text: '総手数' }), el('b', { text: `${d.turns}手` })]),
+      el('p', { class: 'muted', text: '観戦者に報酬はありません。' }),
+      el('div', { class: 'grid2', style: 'margin-top:8px' }, [
+        el('button', {
+          class: 'btn sub', type: 'button', text: 'プロフィールへ',
+          onclick: () => { state.spectate = null; state.profileCode = state.spectateFor; state.profile = null; ctx.setView('friends'); },
+        }),
+        el('button', {
+          class: 'btn sub', type: 'button', text: 'フレンド一覧へ',
+          onclick: () => { state.spectate = null; state.spectateId = null; ctx.setView('friends'); },
+        }),
+      ]),
+    ]));
+  } else {
+    // 進行中は取り直す。観戦者が増えても対戦側の処理は変わらない（§50）
+    root.appendChild(pollNode(ctx, body));
+  }
+}
+
+/**
+ * 画面に付いている間だけ2秒ごとに取り直す。外れたら自分で止まる。
+ * 取得中も古い盤面を出したままにする（消してから読み直すとちらつく）。
+ */
+function pollNode(ctx, body) {
+  const node = el('p', { class: 'muted', text: '盤面はサーバーの正式な状態から取り直しています。' });
+  const id = setInterval(() => {
+    if (!node.isConnected) { clearInterval(id); return; }
+    if (state.spectate && state.spectate.status !== 'playing') { clearInterval(id); return; }
+    load(ctx, 'spec', '/api/spectate', body, (v) => { state.spectate = v.spectate; });
+  }, 2000);
+  return node;
+}
+
+/* ───────────────── ルームからフレンドを招く（§29 §63） ───────────────── */
+
+function inviteFriendsCard(ctx, room) {
+  if (!state.friends) {
+    load(ctx, 'list', '/api/friends/list', {}, (v) => { state.friends = v.friends; });
+  }
+  const list = state.friends?.friends || [];
+  const invited = state.invited || (state.invited = new Set());
+
+  return el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: 'フレンドを招待' }),
+    el('p', { class: 'muted', text: `この部屋はフレンドだけが参加できます。招待は5分で期限切れになります。現在 ${room.members.length} / 3人。` }),
+    !state.friends
+      ? el('p', { class: 'muted', text: '読み込んでいます…' })
+      : list.length === 0
+        ? el('p', { class: 'muted', text: 'まだフレンドがいません。' })
+        : el('div', {}, list.map((p) => playerRow(ctx, p, [
+          invited.has(p.playerCode)
+            ? el('span', { class: 'pill N', text: '招待済' })
+            : el('button', {
+              class: 'btn small', type: 'button', text: '招待',
+              onclick: async () => {
+                const r = await ctx.net.post('/api/invite/send', { playerCode: p.playerCode }, { durable: false });
+                if (!r.ok) {
+                  // すでにこの部屋にいる場合もサーバーが弾く（§31 の空席・重複確認）
+                  toast(r.message || '招待できませんでした。', 'error');
+                  return;
+                }
+                invited.add(p.playerCode);
+                toast(`${p.name}さんを招待しました。`);
+                ctx.refresh();
+              },
+            }),
+        ]))),
+    el('button', {
+      class: 'btn sub block', type: 'button', style: 'margin-top:8px', text: 'フレンド一覧を更新',
+      onclick: () => { state.friends = null; ctx.refresh(); },
+    }),
+  ]);
+}
+
+/** ルームを離れたら「招待済み」の表示を持ち越さない。 */
+function resetInvited() { state.invited = new Set(); }
+
+return { resetFriendsView, renderFriends, renderNotifications, openSpectate, renderSpectate, inviteFriendsCard, resetInvited };
 });
 __def("views/settings.js", function (__req) {
 /** 設定：音量 / 名前 / 保存（書き出し・読み込み・初期化）/ モード切替 */
