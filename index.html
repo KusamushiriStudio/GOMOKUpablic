@@ -8193,8 +8193,8 @@ class SupaNet {
 
     for (const topic of want) {
       if (this._wsTopics.has(topic)) continue;
-      const table = topic.startsWith('match:') ? 'matches'
-        : topic.startsWith('room:') ? 'rooms' : 'matchmaking_queue';
+      const table = topic.startsWith('match:') ? 'triad_matches'
+        : topic.startsWith('room:') ? 'triad_rooms' : 'triad_rooms';
       try {
         ws.send(JSON.stringify({
           topic: `realtime:${topic}`,

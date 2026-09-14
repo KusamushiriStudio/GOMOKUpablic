@@ -1,0 +1,4 @@
+project_id = "smblibukiazihefecwmo"
+
+[functions.api]
+verify_jwt = true
