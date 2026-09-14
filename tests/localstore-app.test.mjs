@@ -1026,3 +1026,76 @@ test('10+1ガチャ結果は11件すべてと11件目のおまけ表示を描画
     assert.equal(walkNodes(resultCells[10]).some((node) => node.textContent === 'おまけ'), true);
   });
 });
+
+/* ───────── 表示する資産の選び方（オンライン対戦後にローカルへ戻らないこと） ───────── */
+
+test('接続先が見つかったら、表示する資産はオンラインになる', async () => {
+  await withBrowser({
+    bootable: true,
+    fetch: async (url) => {
+      const u = String(url);
+      if (u === '/api/config') return { ok: true, async json() { return { ok: true, onlineEnabled: true }; } };
+      if (u === '/api/health') return { ok: true, async json() { return { ok: true }; } };
+      return { ok: false, status: 404, async json() { return { ok: false }; } };
+    },
+  }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    browser.document.dispatchEvent({ type: 'DOMContentLoaded' });
+    await flushAsync();
+
+    await flushAsync(20);
+
+    // この試験用ブラウザには EventSource が無いので接続自体は完走しない。
+    // 見たいのは「接続先が見つかった時点で資産表示がオンラインへ寄る」ことだけ。
+    const { app } = browser.window.__triad;
+    assert.equal(app.mode, 'ONLINE', '読み込み直後に端末側の残高を出さない');
+  });
+});
+
+test('接続先が無ければローカルの資産のまま遊べる', async () => {
+  await withBrowser({ localOnly: true, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    browser.document.dispatchEvent({ type: 'DOMContentLoaded' });
+    await flushAsync();
+
+    const { app } = browser.window.__triad;
+    assert.equal(app.onlineKind, null);
+    assert.equal(app.mode, 'LOCAL', 'オフラインでも遊べる状態は残す');
+  });
+});
+
+test('オンラインの資産を見ているあいだ、端末に残った対戦を勝手に開かない', async () => {
+  await withBrowser({ localOnly: true, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    browser.document.dispatchEvent({ type: 'DOMContentLoaded' });
+    await flushAsync();
+
+    const { ctx, app, localStore } = browser.window.__triad;
+    const rules = requireModule('../../shared/rules.js');
+    const { CHARACTERS } = requireModule('../../shared/constants.js');
+    const seats = CHARACTERS.slice(0, 3).map((c, i) => ({
+      seat: i + 1, charId: c.id, name: `P${i + 1}`, kind: i === 0 ? 'human' : 'cpu',
+    }));
+    const saved = localStore.setMatch({
+      state: rules.createMatch({ matchId: 'm_local', mode: 'local', seats, startSeat: 1 }),
+      setup: { mode: 'cpu' },
+    });
+    assert.equal(saved.ok, true, '端末に途中の対戦がある状態を作る');
+
+    const root = browser.document.getElementById('view-root');
+    const atEntrance = () => walkNodes(root).some((node) => (
+      node.tagName === 'STRONG' && node.textContent === 'オンライン対戦'
+    ));
+
+    app.mode = 'ONLINE';
+    ctx.setView('play');
+    assert.equal(atEntrance(), true, 'オンライン表示中は入口のまま（保存された対戦を開かない）');
+
+    app.mode = 'LOCAL';
+    ctx.refresh();
+    assert.equal(atEntrance(), false, 'ローカル表示に切り替えたときだけ、保存された対戦を開く');
+  });
+});
