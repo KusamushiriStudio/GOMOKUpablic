@@ -506,7 +506,7 @@ test('TEST-009: locked/corrupt LOCAL mutations are rejected before profile chang
   });
 });
 
-test('LOCAL gacha rolls back every profile field when persistence fails', async () => {
+test('LOCAL 10+1 gacha rolls back every profile field when persistence fails', async () => {
   let rejectDataWrites = false;
   const storage = createStorage({}, {
     beforeSet(key) {
@@ -521,7 +521,7 @@ test('LOCAL gacha rolls back every profile field when persistence fails', async 
     const before = clone(localStore.profile);
     rejectDataWrites = true;
 
-    const result = await ctx.api.gacha(1);
+    const result = await ctx.api.gacha(10);
 
     assert.equal(result.ok, false, '保存できない抽選を成立扱いにしない');
     assertUnchanged(localStore.profile, before,
@@ -884,5 +884,145 @@ test('story cannot begin in memory when the initial save fails', async () => {
     assert.equal(storyView.startMatchNow(ctx, 1), false);
     assert.equal(localStore.storyMatch, null);
     assertUnchanged(localStore.profile, before, 'activeMatchIdも保存成功前に変更しない');
+  });
+});
+
+test('着手前確認は初期値ONで、OFF/ONを端末設定へ保存する', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage }, async () => {
+    let requireModule = await loadFreshBundle();
+    let { preferences } = requireModule('preferences.js');
+    assert.equal(preferences.values.confirmMove, true, '設定が無い既存ユーザーはON');
+
+    assert.equal(preferences.set({ confirmMove: false }).ok, true);
+    requireModule = await loadFreshBundle();
+    ({ preferences } = requireModule('preferences.js'));
+    assert.equal(preferences.values.confirmMove, false, '再起動相当でもOFFを維持');
+
+    assert.equal(preferences.set({ confirmMove: true }).ok, true);
+    requireModule = await loadFreshBundle();
+    ({ preferences } = requireModule('preferences.js'));
+    assert.equal(preferences.values.confirmMove, true, '再起動相当でもONを維持');
+  });
+});
+
+test('対戦ページはオンライン対戦と練習モードから既存機能へ遷移できる', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const { ctx } = browser.window.__triad;
+    ctx.setView('play');
+    const root = browser.document.getElementById('view-root');
+    const buttonWithHeading = (text) => findNode(root, (node) => (
+      node.tagName === 'BUTTON'
+      && walkNodes(node).some((child) => child.tagName === 'STRONG' && child.textContent === text)
+    ), `「${text}」主要ボタンが見つかる`);
+
+    buttonWithHeading('オンライン対戦');
+    await triggerNode(buttonWithHeading('練習モード'), 'click');
+    const computer = buttonWithHeading('コンピュータ対戦');
+    buttonWithHeading('同一端末対戦');
+    findButton(root, '戻る');
+
+    await triggerNode(computer, 'click');
+    findNode(root, (node) => node.textContent === 'コンピュータ対戦設定');
+    await triggerNode(findButton(root, '練習モードへ戻る'), 'click');
+    await triggerNode(findButton(root, '戻る'), 'click');
+    buttonWithHeading('オンライン対戦');
+    buttonWithHeading('練習モード');
+  });
+});
+
+test('AI形勢評価はコンピュータ対戦セッションだけに表示する', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const { ctx } = browser.window.__triad;
+    const play = requireModule('views/play.js');
+    const { clear } = requireModule('util.js');
+    const root = browser.document.getElementById('view-root');
+    ctx.refresh = () => {};
+
+    const cpu = { state: makeLocalState({ matchId: 'cpu-eval' }), setup: { mode: 'cpu' } };
+    play.renderMatch(root, ctx, play.buildLocalSession(ctx, cpu));
+    findNode(root, (node) => node.dataset?.testid === 'ai-evaluation', 'CPU戦にはAI評価がある');
+
+    clear(root);
+    const hotseat = { state: makeLocalState({ matchId: 'hotseat-no-eval' }), setup: { mode: 'hotseat' } };
+    play.renderMatch(root, ctx, play.buildLocalSession(ctx, hotseat));
+    assert.equal(walkNodes(root).some((node) => node.dataset?.testid === 'ai-evaluation'), false,
+      '同一端末対戦にはAI評価を表示しない');
+
+    clear(root);
+    const state = makeLocalState({ matchId: 'online-no-eval' });
+    play.renderMatch(root, ctx, {
+      kind: 'online', state, yourSeat: 1, controllable: (seat) => seat === 1,
+      boardId: 'board-default', stoneBySeat: {}, busy: false,
+      submit: async () => false, abort: async () => false,
+    });
+    assert.equal(walkNodes(root).some((node) => node.dataset?.testid === 'ai-evaluation'), false,
+      'オンライン対戦にはAI評価を表示しない');
+  });
+});
+
+test('着手前確認ONは仮選択、OFFは合法点を即時着手する', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const { ctx, localStore } = browser.window.__triad;
+    const play = requireModule('views/play.js');
+    const { preferences } = requireModule('preferences.js');
+    ctx.refresh = () => {};
+
+    const local = { state: makeLocalState({ matchId: 'confirm-move' }), setup: { mode: 'hotseat' } };
+    assert.equal(localStore.setMatch(local).ok, true);
+    const session = play.buildLocalSession(ctx, local);
+    const first = local.state.stones.findIndex((stone) => stone === 0);
+
+    play.onPick(ctx, session, first);
+    assert.equal(local.state.stones[first], 0, 'ONでは確定前に正式盤面を変えない');
+    play.resetSelection(false);
+
+    assert.equal(preferences.set({ confirmMove: false }).ok, true);
+    play.onPick(ctx, session, first);
+    await flushAsync();
+    assert.equal(local.state.stones[first], 1, 'OFFでは合法点タップで着手する');
+    const revision = local.state.revision;
+
+    play.onPick(ctx, session, first);
+    await flushAsync();
+    assert.equal(local.state.revision, revision, '相手手番や使用済み交点では追加着手しない');
+  });
+});
+
+test('10+1ガチャ結果は11件すべてと11件目のおまけ表示を描画する', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const { ctx, localStore } = browser.window.__triad;
+    const { clear } = requireModule('util.js');
+    const { renderGacha } = requireModule('views/gacha.js');
+    const funded = localStore.transaction((draft) => {
+      draft.profile.perica = 10;
+      return { ok: true };
+    });
+    assert.equal(funded.ok, true);
+
+    const pulled = await ctx.api.gacha(10);
+    assert.equal(pulled.ok, true);
+    ctx.app.gachaResult = pulled.result;
+    const root = browser.document.getElementById('view-root');
+    clear(root);
+    renderGacha(root, ctx);
+
+    const resultCells = walkNodes(root).filter((node) => (
+      String(node.className || '').split(/\s+/).includes('gacha-cell')
+    ));
+    assert.equal(resultCells.length, 11);
+    assert.equal(walkNodes(resultCells[10]).some((node) => node.textContent === 'おまけ'), true);
   });
 });

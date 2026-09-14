@@ -202,6 +202,14 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 
 .bar { height: 6px; border-radius: 3px; background: var(--cream-2); overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--green-500); }
+.position-eval { display: grid; gap: 9px; margin-top: 8px; }
+.position-eval-row { display: grid; grid-template-columns: minmax(92px, auto) 1fr 42px; gap: 8px; align-items: center; font-size: 12px; }
+.position-eval-row .bar { height: 9px; }
+.position-eval-row .bar > i { background: var(--seat-color, var(--green-500)); }
+.mode-choice { min-height: 92px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; }
+.mode-choice strong { font-size: 17px; }
+.mode-choice span { font-size: 12px; font-weight: 400; opacity: .84; line-height: 1.5; }
+.mode-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
 
 .notice {
   border-left: 4px solid var(--gold); background: #fdf6e3; padding: 8px 10px;
@@ -572,7 +580,7 @@ const { net } = __req("net.js");
 const { dbNet } = __req("dbnet.js");
 const { supaNet } = __req("supanet.js");
 const { renderHome, renderMissions } = __req("views/home.js");
-const { renderPlay, clearCpuTimer, getBoardView } = __req("views/play.js");
+const { renderPlay, clearCpuTimer, getBoardView, resetPlayMenu } = __req("views/play.js");
 const { renderChars, renderWardrobe } = __req("views/collection.js");
 const { renderGacha } = __req("views/gacha.js");
 const { renderOnline } = __req("views/online.js");
@@ -690,6 +698,7 @@ const ctx = {
   get onlineKind() { return app.onlineKind; },
   setView(name) {
     if (!VIEWS[name]) return;
+    if (name === 'play' && app.view !== 'play' && !localStore.match) resetPlayMenu();
     // 物語から離れるときは画面状態を戻す（進行中の盤は保存に残る）
     if (app.view === 'story' && name !== 'story') resetStoryView();
     app.view = name;
@@ -1258,6 +1267,57 @@ function setEffectLevel(v) {
 }
 
 return { el, clear, qs, toast, confirmDialog, shareLink, showUrlDialog, inAppBrowser, fmt, pct, dateLabel, prefersReducedMotion, saveFile, newRequestId, effectLevel, setEffectLevel };
+});
+__def("preferences.js", function (__req) {
+/** 端末ごとのUI設定。セーブデータやオンライン資産とは分離する。 */
+const { STORAGE_UI_KEY } = __req("../../shared/constants.js");
+
+const DEFAULT_PREFERENCES = Object.freeze({ confirmMove: true });
+
+class Preferences {
+  constructor() {
+    this.values = { ...DEFAULT_PREFERENCES };
+    this.load();
+  }
+
+  load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_UI_KEY);
+      if (!raw) return this.values;
+      const saved = JSON.parse(raw);
+      this.values = {
+        // 既存ユーザーや壊れた旧設定は必ず安全側のONにする。
+        confirmMove: typeof saved?.confirmMove === 'boolean'
+          ? saved.confirmMove : DEFAULT_PREFERENCES.confirmMove,
+      };
+    } catch {
+      this.values = { ...DEFAULT_PREFERENCES };
+    }
+    return this.values;
+  }
+
+  save() {
+    try {
+      localStorage.setItem(STORAGE_UI_KEY, JSON.stringify(this.values));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  set(patch = {}) {
+    const before = { ...this.values };
+    if (typeof patch.confirmMove === 'boolean') this.values.confirmMove = patch.confirmMove;
+    if (!this.save()) {
+      this.values = before;
+      return { ok: false, message: '設定を端末へ保存できませんでした。' };
+    }
+    return { ok: true, values: { ...this.values } };
+  }
+}
+
+const preferences = new Preferences();
+return { Preferences, preferences, DEFAULT_PREFERENCES };
 });
 __def("audio.js", function (__req) {
 /**
@@ -2071,7 +2131,8 @@ const GACHA_POOL_BY_ID = Object.freeze(
 /* ────────────────────────── 経済 ────────────────────────── */
 
 const GACHA_COST_SINGLE = 1;
-const GACHA_PULL_COUNT_MULTI = 10;
+const GACHA_COST_MULTI = 10;
+const GACHA_PULL_COUNT_MULTI = 11;
 
 const REWARD_PERICA = Object.freeze({ win: 3, lose: 1, draw: 1, aborted: 0 });
 const REWARD_PLAYER_XP = Object.freeze({ win: 60, lose: 30, draw: 30, aborted: 0 });
@@ -2124,6 +2185,7 @@ const BPM_MATCH = 108;
 
 const STORAGE_KEY = 'triad.local.v1';
 const STORAGE_AUDIO_KEY = 'triad.audio.v1';
+const STORAGE_UI_KEY = 'triad.ui.v1';
 const STORAGE_LOCK_KEY = 'triad.lock.v1';
 const LEGACY_STORAGE_KEYS = Object.freeze(['triad.save', 'triad.local.v0', 'gomoku3.save']);
 /**
@@ -2157,7 +2219,7 @@ function indexToLabel(index) {
   return `${COLUMN_LABELS[col]}${row + 1}`;
 }
 
-return { BOARD_W, BOARD_H, BOARD_SIZE, CENTER_INDEX, WIN_LENGTH, COLUMN_LABELS, LEGACY_BOARD_W, LEGACY_BOARD_H, SEATS, SEAT_COLORS, MAX_ENERGY, NEIGHBOR_DIRS, LINE_DIRS, RARITIES, RARITY_WEIGHTS, RARITY_WEIGHT_TOTAL, RARITY_LABEL, CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, SKILL_BY_ID, SKILL_BY_CHARACTER, COSMETIC_SLOTS, DEFAULT_EQUIP, COSMETICS, COSMETIC_BY_ID, SLOT_LABEL, CHARACTER_DRAW_PREFIX, characterDrawId, parseDrawId, GACHA_POOL, GACHA_POOL_BY_RARITY, GACHA_POOL_BY_ID, GACHA_COST_SINGLE, GACHA_PULL_COUNT_MULTI, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, MISSIONS, MISSION_BY_ID, ROOM_CODE_LENGTH, ROOM_CODE_ALPHABET, ROOM_CAPACITY, DISCONNECT_GRACE_MS, DISCONNECT_WATCH_INTERVAL_MS, SSE_HEARTBEAT_MS, FX_DURATION_MS, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, STORAGE_EFFECT_KEY, BPM_HOME, BPM_MATCH, STORAGE_KEY, STORAGE_AUDIO_KEY, STORAGE_LOCK_KEY, LEGACY_STORAGE_KEYS, SAVE_VERSION, SAVE_VERSION_PREV, SAVE_VERSIONS_MIGRATABLE, GACHA_HISTORY_LIMIT, indexToCoord, coordToIndex, inBoard, indexToLabel };
+return { BOARD_W, BOARD_H, BOARD_SIZE, CENTER_INDEX, WIN_LENGTH, COLUMN_LABELS, LEGACY_BOARD_W, LEGACY_BOARD_H, SEATS, SEAT_COLORS, MAX_ENERGY, NEIGHBOR_DIRS, LINE_DIRS, RARITIES, RARITY_WEIGHTS, RARITY_WEIGHT_TOTAL, RARITY_LABEL, CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, SKILL_BY_ID, SKILL_BY_CHARACTER, COSMETIC_SLOTS, DEFAULT_EQUIP, COSMETICS, COSMETIC_BY_ID, SLOT_LABEL, CHARACTER_DRAW_PREFIX, characterDrawId, parseDrawId, GACHA_POOL, GACHA_POOL_BY_RARITY, GACHA_POOL_BY_ID, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, MISSIONS, MISSION_BY_ID, ROOM_CODE_LENGTH, ROOM_CODE_ALPHABET, ROOM_CAPACITY, DISCONNECT_GRACE_MS, DISCONNECT_WATCH_INTERVAL_MS, SSE_HEARTBEAT_MS, FX_DURATION_MS, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, STORAGE_EFFECT_KEY, BPM_HOME, BPM_MATCH, STORAGE_KEY, STORAGE_AUDIO_KEY, STORAGE_UI_KEY, STORAGE_LOCK_KEY, LEGACY_STORAGE_KEYS, SAVE_VERSION, SAVE_VERSION_PREV, SAVE_VERSIONS_MIGRATABLE, GACHA_HISTORY_LIMIT, indexToCoord, coordToIndex, inBoard, indexToLabel };
 });
 __def("fx.js", function (__req) {
 /**
@@ -2993,7 +3055,7 @@ __def("../../shared/profile.js", function (__req) {
  * ローカル(localStorage) とサーバー(JSON) の双方で同じ関数を使う。
  */
 
-const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_HISTORY_LIMIT, SAVE_VERSION, parseDrawId } = __req("../../shared/constants.js");
+const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, GACHA_HISTORY_LIMIT, SAVE_VERSION, parseDrawId } = __req("../../shared/constants.js");
 const { drawMany, defaultWeights, ratesToWeights, weightsToRates, offerRates } = __req("../../shared/gacha.js");
 const { STAGE_BY_ID, STORY_STAGE_COUNT, STORY_TOTAL_PERICA, SKILL_UNLOCKS, SKILL_UNLOCK_BY_STAGE, SEAL_BY_STAGE, STAGE_REWARD, STORY_XP, DUPLICATE_DROP_XP } = __req("../../shared/story/stages.js");
 
@@ -3476,7 +3538,7 @@ function currentOfferRates(profile) {
  */
 function pullGacha(profile, { count, requestId, randomInt, ledgerLimits }) {
   const n = Number(count);
-  if (![1, 10].includes(n)) return { ok: false, code: 'bad_count', message: 'ガチャは1回または10回だけ実行できます。' };
+  if (![1, 10].includes(n)) return { ok: false, code: 'bad_count', message: 'ガチャは1回または10+1回だけ実行できます。' };
   const body = { op: 'gacha', count: n };
 
   const look = ledgerLookup(profile, requestId, body);
@@ -3486,7 +3548,10 @@ function pullGacha(profile, { count, requestId, randomInt, ledgerLimits }) {
   }
   if (look.state === 'conflict') return { ok: false, code: LEDGER_ERR_CONFLICT, message: '同じ操作IDで内容の異なる要求が届きました。' };
 
-  const cost = GACHA_COST_SINGLE * n;
+  // API上の count=10 は従来の複数回商品IDとして維持する。
+  // 料金は10回分のまま、共通抽選処理だけを11回走らせる。
+  const drawCount = n === 10 ? GACHA_PULL_COUNT_MULTI : 1;
+  const cost = n === 10 ? GACHA_COST_MULTI : GACHA_COST_SINGLE;
   if (profile.perica < cost) {
     return { ok: false, code: 'insufficient', message: `ペリカが足りません（必要 ${cost} / 所持 ${profile.perica}）。` };
   }
@@ -3497,7 +3562,7 @@ function pullGacha(profile, { count, requestId, randomInt, ledgerLimits }) {
   let items;
   try {
     // 抽選を先に全て済ませる。途中で失敗しても何も消費しない。
-    items = drawMany(n, weights, randomInt);
+    items = drawMany(drawCount, weights, randomInt);
   } catch (e) {
     return { ok: false, code: e.code || 'draw_failed', message: e.message || '抽選に失敗しました。' };
   }
@@ -3540,7 +3605,16 @@ function pullGacha(profile, { count, requestId, randomInt, ledgerLimits }) {
   }
   profile.updatedAt = now;
 
-  const result = { count: n, cost, entries, balance: profile.perica, dupPlayerXp, rates };
+  const result = {
+    count: drawCount,
+    purchaseCount: n,
+    bonusCount: n === 10 ? drawCount - 10 : 0,
+    cost,
+    entries,
+    balance: profile.perica,
+    dupPlayerXp,
+    rates,
+  };
   ledgerRecord(profile, requestId, body, result, ledgerLimits);
   return { ok: true, result };
 }
@@ -8178,7 +8252,7 @@ function renderHome(root, ctx) {
     el('div', { class: 'grid2' }, [
       el('button', { class: 'btn', type: 'button', text: '対戦する', onclick: () => ctx.setView('play') }),
       el('button', { class: 'btn sub', type: 'button', text: '物語（1対1）', onclick: () => ctx.setView('story') }),
-      el('button', { class: 'btn sub', type: 'button', text: 'オンライン3人対戦', onclick: () => ctx.setView('online') }),
+      el('button', { class: 'btn sub', type: 'button', text: 'オンライン対戦', onclick: () => ctx.setView('online') }),
       el('button', { class: 'btn sub', type: 'button', text: 'ガチャを引く', onclick: () => ctx.setView('gacha') }),
       el('button', { class: 'btn sub', type: 'button', text: '着せ替え', onclick: () => ctx.setView('wardrobe') }),
     ]),
@@ -8552,6 +8626,190 @@ function cosmeticThumb(id) {
 
 return { esc, boardTheme, boardBackground, stoneMarkup, stoneThumb, boardThumb, characterSvg, cosmeticThumb };
 });
+__def("../../shared/evaluation.js", function (__req) {
+/**
+ * 練習用の軽量な局面評価。CPUの着手選択とは独立しており、勝敗ルールを変更しない。
+ * 探索を深くせず、連・即勝ち筋・手番・エナジー・術・結界・氷結を数値化する。
+ */
+const { WIN_LENGTH, LINE_DIRS, SKILL_BY_ID, SKILL_BY_CHARACTER } = __req("../../shared/constants.js");
+
+function activeSkills(state, seat) {
+  const rec = state.seats.find((item) => item.seat === seat);
+  if (!rec) return [];
+  const ids = Array.isArray(rec.skills)
+    ? rec.skills
+    : [SKILL_BY_CHARACTER[rec.charId]?.id].filter(Boolean);
+  return ids.map((id) => SKILL_BY_ID[id]).filter(Boolean);
+}
+
+function usedCount(state, seat, skillId) {
+  const used = state.skillUses?.[seat];
+  if (typeof used === 'number') return used;
+  return Number(used?.[skillId] || 0);
+}
+
+function useCap(state, seat, skill) {
+  const cap = state.usesCap?.[seat];
+  return Number.isFinite(cap) ? cap : skill.uses;
+}
+
+function inBoard(state, col, row) {
+  return col >= 0 && col < state.width && row >= 0 && row < state.height;
+}
+
+function at(state, col, row) {
+  return inBoard(state, col, row) ? row * state.width + col : -1;
+}
+
+function boardLines(state) {
+  const lines = [];
+  for (const [dc, dr] of LINE_DIRS) {
+    for (let row = 0; row < state.height; row += 1) {
+      for (let col = 0; col < state.width; col += 1) {
+        if (inBoard(state, col - dc, row - dr)) continue;
+        const line = [];
+        let c = col;
+        let r = row;
+        while (inBoard(state, c, r)) {
+          line.push(at(state, c, r));
+          c += dc;
+          r += dr;
+        }
+        if (line.length >= WIN_LENGTH) lines.push(line);
+      }
+    }
+  }
+  return lines;
+}
+
+function terminalPercentages(state, seats) {
+  if (state.status !== 'finished') return null;
+  const result = state.result || {};
+  const winners = result.kind === 'co_win'
+    ? (result.winners || [])
+    : result.kind === 'win' ? [result.winner] : [];
+  if (!winners.length) return equalPercentages(seats);
+  return splitPercentages(seats, seats.map((seat) => winners.includes(seat) ? 1 : 0));
+}
+
+function equalPercentages(seats) {
+  return splitPercentages(seats, seats.map(() => 1));
+}
+
+function splitPercentages(seats, weights) {
+  const sum = weights.reduce((total, value) => total + Math.max(0, value), 0) || seats.length;
+  const exact = weights.map((value) => (Math.max(0, value) / sum) * 100);
+  const whole = exact.map(Math.floor);
+  let left = 100 - whole.reduce((total, value) => total + value, 0);
+  const order = exact.map((value, index) => ({ index, fraction: value - whole[index] }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+  for (let i = 0; i < left; i += 1) whole[order[i % order.length].index] += 1;
+  return Object.fromEntries(seats.map((seat, index) => [seat, whole[index]]));
+}
+
+function turnDistance(state, seat, seats) {
+  const order = Array.isArray(state.order) && state.order.length === seats.length ? state.order : seats;
+  const now = Math.max(0, order.indexOf(state.turn));
+  const target = Math.max(0, order.indexOf(seat));
+  return (target - now + order.length) % order.length;
+}
+
+function scoreLines(state, seat, lines) {
+  let score = 0;
+  let immediate = 0;
+  let openThrees = 0;
+  for (const line of lines) {
+    for (let start = 0; start <= line.length - WIN_LENGTH; start += 1) {
+      const window = line.slice(start, start + WIN_LENGTH);
+      let mine = 0;
+      let other = 0;
+      let empty = 0;
+      for (const index of window) {
+        const owner = state.stones[index];
+        if (owner === seat) mine += 1;
+        else if (owner === 0) empty += 1;
+        else other += 1;
+      }
+      if (other) continue;
+      const before = start > 0 ? line[start - 1] : -1;
+      const after = start + WIN_LENGTH < line.length ? line[start + WIN_LENGTH] : -1;
+      const openEnds = (before >= 0 && state.stones[before] === 0 ? 1 : 0)
+        + (after >= 0 && state.stones[after] === 0 ? 1 : 0);
+      const weights = [0, 1, 7, 34, 210, 5000];
+      score += weights[mine] + openEnds * mine * mine * 2;
+      if (mine === 4 && empty === 1) immediate += 1;
+      if (mine === 3 && empty === 2 && openEnds === 2) openThrees += 1;
+    }
+
+    let runStart = 0;
+    while (runStart < line.length) {
+      if (state.stones[line[runStart]] !== seat) { runStart += 1; continue; }
+      let end = runStart + 1;
+      while (end < line.length && state.stones[line[end]] === seat) end += 1;
+      const length = end - runStart;
+      const openEnds = (runStart > 0 && state.stones[line[runStart - 1]] === 0 ? 1 : 0)
+        + (end < line.length && state.stones[line[end]] === 0 ? 1 : 0);
+      if (length >= 2) score += length * length * (openEnds + 1) * 3;
+      runStart = end;
+    }
+  }
+  score += immediate * 900 + Math.max(0, immediate - 1) * 800;
+  score += openThrees * 100 + Math.max(0, openThrees - 1) * 90;
+  return { score, immediate, openThrees };
+}
+
+function scoreSkills(state, seat) {
+  let score = 0;
+  const energy = Number(state.energy?.[seat] || 0);
+  const ownStones = state.stones.reduce((n, owner) => n + (owner === seat ? 1 : 0), 0);
+  const opponentStones = state.stones.reduce((n, owner) => n + (owner !== 0 && owner !== seat ? 1 : 0), 0);
+  const empty = state.stones.length - ownStones - opponentStones;
+  for (const skill of activeSkills(state, seat)) {
+    const remaining = Math.max(0, useCap(state, seat, skill) - usedCount(state, seat, skill.id));
+    if (!remaining) continue;
+    const ready = energy >= skill.cost;
+    const availability = (ready ? 18 : 7) * Math.min(remaining, 3);
+    if (skill.id === 'spark') score += availability + Math.min(20, opponentStones) * (ready ? 1.2 : 0.4);
+    else if (skill.id === 'ward') score += availability + Math.min(12, ownStones) * 0.8;
+    else if (skill.id === 'windwalk') score += availability + Math.min(12, ownStones) * 0.6;
+    else if (skill.id === 'freeze') score += availability + Math.min(18, empty) * 0.35;
+    else if (skill.id === 'pull') score += availability + Math.min(16, opponentStones) * 0.8;
+    else if (skill.id === 'transmute') score += availability + Math.min(16, opponentStones) * 1.1;
+    else score += availability;
+  }
+  return score;
+}
+
+function evaluatePosition(state) {
+  if (!state || !Array.isArray(state.seats) || !Array.isArray(state.stones)) return [];
+  const seats = state.seats.map((item) => item.seat);
+  const terminal = terminalPercentages(state, seats);
+  if (terminal) {
+    return state.seats.map((item) => ({ seat: item.seat, name: item.name, percent: terminal[item.seat], score: terminal[item.seat] }));
+  }
+  const lines = boardLines(state);
+  const raw = seats.map((seat) => {
+    const line = scoreLines(state, seat, lines);
+    const guarded = state.guards?.reduce((n, value, index) => n + (value && state.stones[index] === seat ? 1 : 0), 0) || 0;
+    const iceOwned = state.iceOwner?.reduce((n, owner, index) => n + (owner === seat && Number(state.ice?.[index] || 0) > 0 ? 1 : 0), 0) || 0;
+    const distance = turnDistance(state, seat, seats);
+    const turnScore = (seats.length - distance) * 8;
+    const energyScore = Number(state.energy?.[seat] || 0) * 5;
+    return 100 + line.score + turnScore + energyScore + guarded * 8 + iceOwned * 3 + scoreSkills(state, seat);
+  });
+  const peak = Math.max(...raw);
+  const weights = raw.map((score) => Math.exp(Math.max(-12, (score - peak) / 420)));
+  const percentages = splitPercentages(seats, weights);
+  return state.seats.map((item, index) => ({
+    seat: item.seat,
+    name: item.name,
+    percent: percentages[item.seat],
+    score: Math.round(raw[index]),
+  }));
+}
+
+return { evaluatePosition };
+});
 __def("views/play.js", function (__req) {
 /**
  * 対戦画面（ローカル / オンライン共通）。
@@ -8565,6 +8823,8 @@ const { BoardView } = __req("board.js");
 const { characterSvg } = __req("art.js");
 const { audio } = __req("audio.js");
 const { fx } = __req("fx.js");
+const { preferences } = __req("preferences.js");
+const { evaluatePosition } = __req("../../shared/evaluation.js");
 const { CHARACTERS, CHARACTER_BY_ID, SEAT_COLORS, MAX_ENERGY, DEFAULT_EQUIP } = __req("../../shared/constants.js");
 const { createMatch, applyAction, canUseSkill, skillFirstTargets, skillSecondTargets, mustPass, chooseCpuAction, legalPlacements, errorMessage, labelOf, outcomeForSeat, isWinnerSeat, skillForSeat, skillInRuleset, usableSkills, skillOfId, skillsOf, usesOf, cloneState, findWinningLine, pickStartSeat, v99Of, v99Info, isFrozen } = __req("../../shared/rules.js");
 const { DEFAULT_PVP_RULESET } = __req("../../shared/rulesets.js");
@@ -8573,6 +8833,14 @@ const { appearanceFor, grantMatchReward, ownedCharacters } = __req("../../shared
 let boardView = null;
 let cpuTimer = null;
 let cpuToken = 0;
+let setupScreen = 'root'; // root | practice | config
+let directMovePending = false;
+let evaluationCache = { key: null, values: [] };
+
+function resetPlayMenu() {
+  setupScreen = 'root';
+  resetSelection(false);
+}
 
 /** 選択状態（未確定の操作は手番・エナジー・回数を一切変更しない） */
 const sel = { mode: 'place', skillId: null, index: null, from: null };
@@ -8616,21 +8884,66 @@ const setupDraft = {
 };
 
 function renderSetup(root, ctx) {
+  if (setupScreen === 'root') {
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h2', { class: 'section-title', text: '対戦' }),
+      el('div', { class: 'mode-grid' }, [
+        el('button', {
+          class: 'btn gold mode-choice', type: 'button',
+          onclick: () => ctx.setView('online'),
+        }, [
+          el('strong', { text: 'オンライン対戦' }),
+          el('span', { text: '世界中のプレイヤーやフレンドとオンラインで対戦' }),
+        ]),
+        el('button', {
+          class: 'btn mode-choice', type: 'button',
+          onclick: () => { ctx.app.mode = 'LOCAL'; setupScreen = 'practice'; ctx.refresh(); },
+        }, [
+          el('strong', { text: '練習モード' }),
+          el('span', { text: 'CPUまたは同じ端末で練習' }),
+        ]),
+      ]),
+    ]));
+    return;
+  }
+
+  if (setupScreen === 'practice') {
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h2', { class: 'section-title', text: '練習モード' }),
+      el('div', { class: 'mode-grid' }, [
+        el('button', {
+          class: 'btn mode-choice', type: 'button',
+          onclick: () => { setupDraft.mode = 'cpu'; setupScreen = 'config'; ctx.refresh(); },
+        }, [
+          el('strong', { text: 'コンピュータ対戦' }),
+          el('span', { text: 'AI形勢評価を見ながらCPUと対戦して練習する' }),
+        ]),
+        el('button', {
+          class: 'btn sub mode-choice', type: 'button',
+          onclick: () => { setupDraft.mode = 'hotseat'; setupScreen = 'config'; ctx.refresh(); },
+        }, [
+          el('strong', { text: '同一端末対戦' }),
+          el('span', { text: '1台の端末をP1・P2・P3で交代して操作する' }),
+        ]),
+      ]),
+      el('button', {
+        class: 'btn sub block', style: 'margin-top:10px', type: 'button', text: '戻る',
+        onclick: () => { setupScreen = 'root'; ctx.refresh(); },
+      }),
+    ]));
+    return;
+  }
+
   const profile = ctx.localStore.profile;
   const owned = ownedCharacters(profile);
   if (!owned.some((c) => c.id === setupDraft.chars[0])) setupDraft.chars[0] = owned[0].id;
 
   const wrap = el('div');
   wrap.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: '対戦開始設定' }),
-    el('div', { class: 'chips', style: 'margin-bottom:10px' }, [
-      chip('1人＋CPU2体', setupDraft.mode === 'cpu', () => { setupDraft.mode = 'cpu'; ctx.refresh(); }),
-      chip('同一端末で3人交代', setupDraft.mode === 'hotseat', () => { setupDraft.mode = 'hotseat'; ctx.refresh(); }),
-      chip('オンライン3人対戦', false, () => ctx.setView('online')),
-    ]),
+    el('h2', { class: 'section-title', text: setupDraft.mode === 'cpu' ? 'コンピュータ対戦設定' : '同一端末対戦設定' }),
     el('p', { class: 'muted', text: setupDraft.mode === 'cpu'
-      ? 'あなたが P1（先手）。CPU は通常着手のみでスキルを使いません。報酬は P1 のプロフィールにだけ入ります。'
-      : '同じ端末で P1 → P2 → P3 の順に交代して操作します。報酬は P1 のプロフィールにだけ入ります（P2 が勝った場合、P1 は敗北扱いで 1 ペリカ）。' }),
+      ? 'あなたが P1、P2・P3 はCPUです。開始席は試合ごとに決まります。CPU は通常着手のみでスキルを使いません。報酬は P1 のプロフィールにだけ入ります。'
+      : '同じ端末で、開始席から P1 → P2 → P3 の順に交代して操作します。報酬は P1 のプロフィールにだけ入ります（P2 が勝った場合、P1 は敗北扱いで 1 ペリカ）。' }),
   ]));
 
   for (let i = 0; i < 3; i += 1) {
@@ -8639,7 +8952,7 @@ function renderSetup(root, ctx) {
     const editable = isYou || setupDraft.mode === 'hotseat';
     const list = editable ? owned : CHARACTERS;
     wrap.appendChild(el('div', { class: 'card' }, [
-      el('h2', { class: 'section-title', text: `P${seat}${isYou ? '（あなた・先手）' : setupDraft.mode === 'cpu' ? '（CPU）' : ''}` }),
+      el('h2', { class: 'section-title', text: `P${seat}${isYou ? '（あなた）' : setupDraft.mode === 'cpu' ? '（CPU）' : ''}` }),
       el('div', { class: 'grid3' }, list.map((c) => charPickCard(c, setupDraft.chars[i] === c.id, () => {
         setupDraft.chars[i] = c.id;
         ctx.refresh();
@@ -8651,6 +8964,10 @@ function renderSetup(root, ctx) {
     el('button', {
       class: 'btn block', type: 'button', text: 'この設定で対戦を始める',
       onclick: () => startLocalMatch(ctx),
+    }),
+    el('button', {
+      class: 'btn sub block', style: 'margin-top:8px', type: 'button', text: '練習モードへ戻る',
+      onclick: () => { setupScreen = 'practice'; ctx.refresh(); },
     }),
   ]));
   root.appendChild(wrap);
@@ -8698,6 +9015,7 @@ function startLocalMatch(ctx) {
   }
   clearCpuTimer();
   fx.reset();
+  evaluationCache = { key: null, values: [] };
   resetSelection(false);
   audio.setTrack('match');
   ctx.refresh();
@@ -8712,6 +9030,7 @@ function buildLocalSession(ctx, local) {
     kind: 'local',
     state: local.state,
     setup: local.setup,
+    showEvaluation: local.setup.mode === 'cpu',
     yourSeat: local.setup.mode === 'hotseat' ? local.state.turn : 1,
     controllable: (seat) => {
       const s = local.state.seats.find((x) => x.seat === seat);
@@ -8826,7 +9145,7 @@ function renderMatch(root, ctx, session) {
   const yourSeat = session.yourSeat;
   const myTurn = !finished && st.turn === yourSeat && session.controllable(st.turn);
   const disconnected = (session.disconnect || []).length > 0;
-  const blocked = !myTurn || session.busy || disconnected;
+  const blocked = !myTurn || session.busy || directMovePending || disconnected;
 
   // 手番表示
   const strip = el('div', { class: 'turn-strip' }, st.seats.map((s) => {
@@ -8923,7 +9242,10 @@ function renderMatch(root, ctx, session) {
       needPass ? el('button', { class: 'chip', type: 'button', text: 'パス', onclick: () => session.submit({ type: 'pass', seat: yourSeat }).then(() => ctx.refresh()) }) : null,
     ]));
     const cur = selectedSkill(st, yourSeat);
-    info.appendChild(el('p', { class: 'muted', text: cur ? skillDesc(st, cur) : '空き交点をタップ → プレビュー → 確定バーの「確定」で着手します。' }));
+    info.appendChild(el('p', { class: 'muted', text: cur ? skillDesc(st, cur)
+      : preferences.values.confirmMove
+        ? '空き交点をタップ → プレビュー → 確定バーの「確定」で着手します。'
+        : '空き交点をタップすると、そのまま着手します。' }));
     const blocked = list.filter((x) => !x.ok);
     if (sel.mode === 'place' && blocked.length && blocked.length === list.length) {
       info.appendChild(el('div', { class: 'notice', text: `いま使える術はありません（${errorMessage(blocked[0].code)}）` }));
@@ -8935,6 +9257,7 @@ function renderMatch(root, ctx, session) {
     if (top) root.appendChild(top);
   }
   root.appendChild(strip);
+  if (session.showEvaluation) root.appendChild(evaluationCard(st));
   root.appendChild(boardWrap);
   root.appendChild(info);
 
@@ -8967,6 +9290,27 @@ function renderMatch(root, ctx, session) {
 
   // CPU 手番
   scheduleCpu(ctx, session);
+}
+
+function evaluationCard(state) {
+  const key = `${state.matchId}|${state.revision}|${state.status}`;
+  if (evaluationCache.key !== key) {
+    evaluationCache = { key, values: evaluatePosition(state) };
+  }
+  return el('div', { class: 'card', dataset: { testid: 'ai-evaluation' } }, [
+    el('h2', { class: 'section-title', text: 'AI形勢評価' }),
+    el('div', { class: 'position-eval' }, evaluationCache.values.map((item) => el('div', {
+      class: 'position-eval-row',
+      style: `--seat-color:${SEAT_COLORS[item.seat]}`,
+    }, [
+      el('span', { text: `P${item.seat} ${item.name}` }),
+      el('div', { class: 'bar', 'aria-label': `P${item.seat} ${item.name} ${item.percent}%` }, [
+        el('i', { style: `width:${item.percent}%` }),
+      ]),
+      el('b', { text: `${item.percent}%` }),
+    ]))),
+    el('p', { class: 'muted', text: '連・即勝ち筋・両端の空き・複数方向の脅威・手番順・エナジー・残り術・結界・氷結をもとにした練習用の目安です。将来の勝利を保証する数値ではありません。' }),
+  ]);
 }
 
 /** その席が攻勢強化に達しているか（表示用） */
@@ -9025,7 +9369,7 @@ function onPick(ctx, session, index) {
   const st = session.state;
   if (st.status !== 'playing') return;
   const seat = session.yourSeat;
-  if (st.turn !== seat || !session.controllable(seat) || session.busy) return;
+  if (st.turn !== seat || !session.controllable(seat) || session.busy || directMovePending) return;
 
   const pend = pendingFor(st, seat);
   if (pend) {
@@ -9045,6 +9389,11 @@ function onPick(ctx, session, index) {
   if (sel.mode === 'place' || sel.mode === 'extra') {
     if (st.stones[index] !== 0) { toast('そこにはすでに石があります。', 'error'); return; }
     if (isFrozen(st, index)) { toast('そこは氷結で封鎖されています。', 'error'); return; }
+    if (sel.mode === 'place' && !preferences.values.confirmMove) {
+      audio.playSfx('select');
+      submitDirectPlace(ctx, session, { type: 'place', seat, index });
+      return;
+    }
     sel.mode = 'place';
     sel.index = index;
     audio.playSfx('select');
@@ -9072,6 +9421,20 @@ function onPick(ctx, session, index) {
   }
   audio.playSfx('select');
   ctx.refresh();
+}
+
+async function submitDirectPlace(ctx, session, action) {
+  if (directMovePending) return false;
+  directMovePending = true;
+  ctx.refresh();
+  try {
+    const committed = await session.submit(action);
+    if (committed) resetSelection(false);
+    return committed;
+  } finally {
+    directMovePending = false;
+    ctx.refresh();
+  }
 }
 
 /**
@@ -9288,7 +9651,7 @@ function scheduleCpu(ctx, session) {
 
 
 
-return { legalPlacements, renderMatch, resetSelection, getBoardView, clearCpuTimer, renderPlay, startLocalMatch, buildLocalSession, finishLocal };
+return { legalPlacements, renderMatch, resetSelection, getBoardView, clearCpuTimer, resetPlayMenu, renderPlay, startLocalMatch, buildLocalSession, finishLocal, onPick, evaluationCard };
 });
 __def("board.js", function (__req) {
 /**
@@ -9714,7 +10077,7 @@ function renderGacha(root, ctx) {
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: '常設ガチャ「三色縁起」' }),
     el('div', { class: 'kv' }, [el('span', { text: '所持ペリカ' }), el('b', { text: fmt(p.perica) })]),
-    el('p', { class: 'muted', text: '1回 1ペリカ／10回 10ペリカ。キャラ6体・ファッション12点・盤面8点・碁石8点の全34種が対象です。10連に保証枠・天井・確率上昇はありません。' }),
+    el('p', { class: 'muted', text: '1回 1ペリカ／10+1回 10ペリカ（1回分おまけ）。キャラ6体・ファッション12点・盤面8点・碁石8点の全34種が対象です。11回目も通常と同じ排出率で、保証枠・天井・確率上昇はありません。' }),
     el('div', { class: 'grid2', style: 'margin-top:8px' }, [
       el('button', {
         class: 'btn gold', type: 'button', text: '1回引く（1ペリカ）',
@@ -9722,7 +10085,7 @@ function renderGacha(root, ctx) {
         onclick: () => doPull(ctx, 1),
       }),
       el('button', {
-        class: 'btn gold', type: 'button', text: '10回引く（10ペリカ）',
+        class: 'btn gold', type: 'button', text: '10回＋1回引く（10ペリカ）',
         disabled: p.perica < 10 || ctx.app.gachaBusy,
         onclick: () => doPull(ctx, 10),
       }),
@@ -9744,8 +10107,8 @@ async function doPull(ctx, count) {
   try {
     const p = ctx.profile();
     const yes = await confirmDialog({
-      title: `${count}回引きますか`,
-      message: `${count} ペリカを消費します（所持 ${fmt(p.perica)}）。`,
+      title: count === 10 ? '10+1回引きますか' : '1回引きますか',
+      message: `${count} ペリカを消費します（所持 ${fmt(p.perica)}）。${count === 10 ? '11回目も同じ通常排出率です。' : ''}`,
       confirmLabel: '引く',
     });
     if (!yes) return;
@@ -9776,8 +10139,8 @@ function resultCard(ctx) {
   const res = ctx.app.gachaResult;
   const p = ctx.profile();
   return el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: `ガチャ結果（${res.count}回）` }),
-    el('div', { class: 'gacha-grid' }, res.entries.map((e) => {
+    el('h2', { class: 'section-title', text: res.bonusCount ? `10+1 ガチャ結果（${res.count}件）` : `ガチャ結果（${res.count}回）` }),
+    el('div', { class: 'gacha-grid' }, res.entries.map((e, index) => {
       const parsed = parseDrawId(e.drawId);
       const art = parsed.kind === 'character'
         ? characterSvg(parsed.id, p.equipByChar?.[parsed.id] || {}, { size: 64 })
@@ -9789,6 +10152,8 @@ function resultCard(ctx) {
           el('span', { class: `pill ${e.rarity}`, text: e.rarity }),
           ' ',
           el('span', { class: `pill ${e.isNew ? 'new' : 'dup'}`, text: e.isNew ? 'NEW' : '重複' }),
+          res.bonusCount && index >= res.entries.length - res.bonusCount ? ' ' : null,
+          res.bonusCount && index >= res.entries.length - res.bonusCount ? el('span', { class: 'pill new', text: 'おまけ' }) : null,
         ]),
         !e.isNew && parsed.kind === 'character' ? el('div', { class: 'muted', text: 'キャラXP +20' }) : null,
         !e.isNew && parsed.kind === 'cosmetic' ? el('div', { class: 'muted', text: 'プレイヤーXP +20' }) : null,
@@ -9806,7 +10171,7 @@ function resultCard(ctx) {
         }) : null,
       ]);
     })),
-    el('p', { class: 'muted', text: '抽選後に自動で装備は変更されません。装備したいものを選んでください。同じ10連の中で初入手品が2回出た場合、1個目がNEW・2個目は重複です。' }),
+    el('p', { class: 'muted', text: '抽選後に自動で装備は変更されません。装備したいものを選んでください。同じ10+1回の中で初入手品が2回出た場合、1個目がNEW・2個目は重複です。11件目は1回分のおまけで、抽選条件は他の10件と同じです。' }),
     el('div', { class: 'row' }, [
       el('button', { class: 'btn sub small', type: 'button', text: '結果を閉じる', onclick: () => { ctx.app.gachaResult = null; ctx.refresh(); } }),
       el('button', { class: 'btn sub small', type: 'button', text: '着せ替え画面へ', onclick: () => ctx.setView('wardrobe') }),
@@ -9928,7 +10293,7 @@ const { CHARACTERS, DEFAULT_EQUIP, ROOM_CAPACITY } = __req("../../shared/constan
 function renderOnline(root, ctx) {
   if (ctx.onlineKind === 'detecting') {
     root.appendChild(el('div', { class: 'card' }, [
-      el('h2', { class: 'section-title', text: 'オンライン3人対戦' }),
+      el('h2', { class: 'section-title', text: 'オンライン対戦' }),
       el('p', { class: 'muted', text: '接続先を確認しています…' }),
     ]));
     return;
@@ -9941,11 +10306,11 @@ function renderOnline(root, ctx) {
   const world = ctx.onlineKind === 'supabase';
 
   root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: 'オンライン3人対戦' }),
+    el('h2', { class: 'section-title', text: 'オンライン対戦' }),
     el('div', { class: 'kv' }, [
       el('span', { text: '接続方式' }),
       el('b', {
-        text: world ? '世界対戦（誰とでも）'
+        text: world ? 'オンライン対戦（誰とでも）'
           : account ? 'アカウント接続（このページを開ける人どうし）' : '専用サーバー',
       }),
     ]),
@@ -10108,7 +10473,7 @@ function renderWorldMatch(root, ctx, view) {
   if (room) worldJoining = false;
 
   root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: '世界対戦' }),
+    el('h2', { class: 'section-title', text: '世界マッチング' }),
     waiting ? worldWaitingPanel(ctx, view, room) : worldJoinPanel(ctx),
     el('button', {
       class: 'btn sub block', type: 'button', style: 'margin-top:8px',
@@ -10121,7 +10486,7 @@ function worldJoinPanel(ctx) {
   return el('div', {}, [
     el('p', { class: 'muted', text: 'ルームコードのやりとりなしで、いま遊んでいる誰かと3人で対戦します。' }),
     el('button', {
-      class: 'btn gold block', type: 'button', text: '世界対戦に参加する',
+      class: 'btn gold block', type: 'button', text: '世界マッチングに参加する',
       onclick: async () => {
         // 応答を待たずに待機画面へ切り替える。押しても何も起きないように見える時間をなくす。
         worldJoining = true;
@@ -10194,9 +10559,9 @@ function worldWaitingPanel(ctx, view, room) {
 
 function worldErrorMessage(r) {
   switch (r.code) {
-    case 'already_in_room': return 'ルームに参加している間は、世界対戦に入れません。先に退出してください。';
+    case 'already_in_room': return 'ルームに参加している間は、世界マッチングに入れません。先に退出してください。';
     case 'already_in_match': return 'すでに対戦中です。';
-    case 'story_busy': return '物語の進行中は、世界対戦に参加できません。先に終えるか、やめてください。';
+    case 'story_busy': return '物語の進行中は、世界マッチングに参加できません。先に終えるか、やめてください。';
     case 'bad_char': return '所持していないキャラクターは選べません。';
     case 'anonymous_disabled': return 'ゲスト参加が有効になっていません。';
     default: return r.message || '参加できませんでした。';
@@ -10230,14 +10595,14 @@ function renderLocalOnlyNotice(root, ctx) {
   const configured = typeof window !== 'undefined' && !!window.__TRIAD_SUPABASE__;
   const notice = configured
     ? 'オンライン対戦の準備ができていません。通信が不安定か、サーバー側でゲスト参加が有効になっていない可能性があります。時間をおいて開き直すと直ることがあります。'
-    : 'この環境ではオンライン対戦の接続先が見つかりませんでした。オンライン3人対戦には、同梱の Node.js サーバー（npm start）か、共有データ機能を有効にした配布ページが必要です。';
+    : 'この環境ではオンライン対戦の接続先が見つかりませんでした。オンライン対戦には、同梱の Node.js サーバー（npm start）か、共有データ機能を有効にした配布ページが必要です。';
   root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: 'オンライン3人対戦について' }),
+    el('h2', { class: 'section-title', text: 'オンライン対戦について' }),
     el('div', { class: 'notice', text: notice }),
-    el('p', { class: 'muted', text: 'このページだけでも「1人＋CPU2体」「同一端末で3人交代」の対戦、ペリカ獲得、ガチャ、着せ替えはすべて遊べます。進行はこの端末のブラウザ内にのみ保存されます。' }),
+    el('p', { class: 'muted', text: 'このページだけでも練習モードの「コンピュータ対戦」「同一端末対戦」、ペリカ獲得、ガチャ、着せ替えはすべて遊べます。進行はこの端末のブラウザ内にのみ保存されます。' }),
     el('p', { class: 'muted', text: '別々の端末から3人で対戦する場合は、配布物の README にある手順でサーバーを起動し、全員がその URL を開いてルームコードで参加してください。' }),
     el('div', { class: 'row' }, [
-      el('button', { class: 'btn', type: 'button', text: 'ローカル対戦を始める', onclick: () => ctx.setView('play') }),
+      el('button', { class: 'btn', type: 'button', text: '練習モードへ', onclick: () => ctx.setView('play') }),
       el('button', { class: 'btn sub', type: 'button', text: 'ホームへ', onclick: () => ctx.setView('home') }),
     ]),
   ]));
@@ -10324,6 +10689,7 @@ __def("views/settings.js", function (__req) {
 
 const { el, toast, confirmDialog, saveFile } = __req("util.js");
 const { audio } = __req("audio.js");
+const { preferences } = __req("preferences.js");
 const { effectLevel, setEffectLevel } = __req("util.js");
 const { DEFAULT_AUDIO } = __req("../../shared/constants.js");
 
@@ -10347,6 +10713,29 @@ function renderSettings(root, ctx) {
     el('p', { class: 'muted', text: 'ローカルとオンラインの資産は完全に分離されています。ローカルの残高・バックアップをオンラインへ持ち込むことはできません。' }),
     ctx.localOnly ? el('div', { class: 'notice', text: 'この環境ではオンライン対戦の接続先が見つかりませんでした。ONLINE は選べません。' }) : null,
     ctx.onlineKind === 'account' ? el('div', { class: 'notice', text: 'ONLINE はアカウント接続です。このページを開けるアカウントどうしで対戦でき、資産は共有データに保存されます。' }) : null,
+  ]));
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '着手前確認' }),
+    el('label', { class: 'row', style: 'gap:8px;font-size:13px;justify-content:space-between' }, [
+      el('span', { text: '石を置く前に確認操作を表示する' }),
+      el('input', {
+        type: 'checkbox', checked: preferences.values.confirmMove,
+        style: 'width:auto;min-height:auto',
+        'aria-label': '着手前確認',
+        onchange: (event) => {
+          const saved = preferences.set({ confirmMove: event.target.checked });
+          if (!saved.ok) toast(saved.message, 'error');
+          else toast(`着手前確認を${preferences.values.confirmMove ? 'ON' : 'OFF'}にしました。`);
+          ctx.refresh();
+        },
+      }),
+    ]),
+    el('p', { class: 'muted', text: 'ONでは交点を選んだ後に「確定／取消」を表示します。OFFでは合法な空き交点のタップで通常着手をすぐ要求します。スキルの対象選択・確定と重要な警告は常に維持されます。' }),
+    el('div', { class: 'kv' }, [
+      el('span', { text: '現在の設定' }),
+      el('b', { text: preferences.values.confirmMove ? 'ON' : 'OFF' }),
+    ]),
   ]));
 
   root.appendChild(el('div', { class: 'card' }, [
@@ -10521,7 +10910,7 @@ function renderRanking(root, ctx) {
   if (ctx.onlineKind !== 'supabase') {
     root.appendChild(el('div', { class: 'card' }, [
       el('h2', { class: 'section-title', text: 'ランキング' }),
-      el('div', { class: 'notice', text: 'ランキングは世界対戦のときだけ表示できます。' }),
+      el('div', { class: 'notice', text: 'ランキングはオンライン対戦のときだけ表示できます。' }),
       el('button', { class: 'btn sub block', type: 'button', text: '戻る', onclick: () => ctx.setView('online') }),
     ]));
     return;
