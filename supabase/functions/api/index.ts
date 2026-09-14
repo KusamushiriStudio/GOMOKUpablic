@@ -65,7 +65,24 @@ async function viewOf(db: any, userId: string, knownProfile?: any) {
   const loaded = knownProfile ? { profile: knownProfile } : await loadProfile(db, userId);
   const room = await findRoom(db, userId);
   const match = await findMatch(db, room);
-  return { profile: loaded.profile, room: room ? publicRoom(room) : null, match: match ? rules.publicSnapshot(match.state) : null, queue: null };
+  return { profile: loaded.profile, room: room ? publicRoom(room) : null, match: match ? matchView(match, userId) : null, queue: null };
+}
+
+/**
+ * 対戦の公開ビュー。
+ * publicSnapshot は盤面（state）だけを写すため、見る人ごとに変わる自席と、
+ * 対戦の入れ物側に持つ報酬をここで足す。クライアントはこの2つを使って
+ * 操作可否の判定と結果画面の表示を行う。
+ */
+function matchView(match: any, userId: string) {
+  const seat = (match.seatSnapshot || []).find((s: any) => s.userId === userId);
+  return {
+    ...rules.publicSnapshot(match.state),
+    yourSeat: seat ? seat.seat : 0,
+    seatSnapshot: match.seatSnapshot || [],
+    rewards: match.rewards || null,
+    disconnect: match.disconnect || [],
+  };
 }
 
 function publicRoom(room: any) {
@@ -82,6 +99,64 @@ async function commitProfile(db: any, userId: string, revision: number, draft: a
   });
   if (error) throw error;
   return data?.[0];
+}
+
+/* ───────────────────── 対戦報酬 ───────────────────── */
+
+/** 決着した対戦の報酬額を席ごとに決める（盤面だけから決まる純粋な計算）。 */
+function rewardsForMatch(match: any) {
+  const aborted = match.status === 'aborted';
+  return (match.seatSnapshot || []).map((s: any) => {
+    const outcome = aborted ? 'aborted' : rules.outcomeForSeat(match.state.result, s.seat);
+    return {
+      userId: s.userId,
+      seat: s.seat,
+      charId: s.charId,
+      outcome,
+      perica: constants.REWARD_PERICA[outcome] ?? 0,
+      playerXp: constants.REWARD_PLAYER_XP[outcome] ?? 0,
+      charXp: constants.REWARD_CHAR_XP[outcome] ?? 0,
+    };
+  });
+}
+
+/**
+ * 決着した対戦の報酬を、各自のプロフィールへ実際に加算する。
+ *
+ * 二重付与はふたつの仕組みで防ぐ。grantMatchReward が profile.rewardedMatches に
+ * 対戦IDを記録し、さらに triad_commit_profile が (user_id, request_id) で
+ * 同じ確定を弾く。どちらから先に届いても結果は変わらない。
+ *
+ * @param onlyUserId 指定するとその人の分だけ確定する（取得のたびに全員分を
+ *   読み書きしないよう、定期取得の経路ではこれを使う）。
+ */
+async function settleMatchRewards(db: any, match: any, onlyUserId?: string) {
+  if (!match || !Array.isArray(match.rewards)) return;
+  const targets = onlyUserId ? match.rewards.filter((r: any) => r.userId === onlyUserId) : match.rewards;
+  for (const reward of targets) {
+    if (!reward?.userId) continue;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const current = await loadProfile(db, reward.userId);
+      if (current.profile.rewardedMatches?.[match.matchId]) break;
+      const draft = clone(current.profile);
+      const granted = profileLogic.grantMatchReward(draft, {
+        matchId: match.matchId,
+        outcome: reward.outcome,
+        charId: reward.charId,
+        stonesPlaced: match.state?.stats?.[reward.seat]?.placed || 0,
+        skillsUsed: match.state?.stats?.[reward.seat]?.skills || 0,
+      });
+      if (!granted?.ok) break;
+      const committed = await commitProfile(
+        db, reward.userId, current.revision, draft,
+        `reward:${match.matchId}`,
+        requestHash('/match/reward', { matchId: match.matchId }),
+        { result: granted.result ?? null, replay: false, processed: false },
+      );
+      if (committed?.status === 'stale') continue;
+      break;
+    }
+  }
 }
 
 async function mutateProfile(ctx: any, path: string, body: any, mutator: (draft: any) => any) {
@@ -114,7 +189,13 @@ async function saveRoom(db: any, room: any) {
 
 async function route(ctx: any, path: string, body: any) {
   const userId = ctx.user.id;
-  if (path === '/me' || path === '/world/poll') return success(await viewOf(ctx.db, userId));
+  if (path === '/me' || path === '/world/poll') {
+    // 決着の手を打てなかった人（負け・引き分け・回線が切れていた人）も、
+    // 次の定期取得で自分の報酬を受け取れるようにする。
+    const pending = await findMatch(ctx.db, await findRoom(ctx.db, userId));
+    if (pending && Array.isArray(pending.rewards)) await settleMatchRewards(ctx.db, pending, userId);
+    return success(await viewOf(ctx.db, userId));
+  }
 
   if (path === '/name') {
     const name = cleanName(body.name);
@@ -227,6 +308,10 @@ async function route(ctx: any, path: string, body: any) {
     const applied = rules.applyAction(match.state, { ...body.action, seat: seat.seat });
     if (!applied.ok) return fail(applied.code, applied.message);
     const next = { ...match, state: applied.state, status: applied.state.status };
+    // 決着した手と同じ確定で報酬額を残す。盤面から決まる値なので、
+    // あとから誰が読んでも同じ結果になる。
+    const finished = next.status === 'finished' || next.status === 'aborted';
+    if (finished && !Array.isArray(next.rewards)) next.rewards = rewardsForMatch(next);
     const response = { result: { matchId: match.matchId, revision: match.revision + 1 } };
     const { data, error } = await ctx.db.rpc('triad_commit_match', {
       p_user_id: userId, p_match_id: match.matchId, p_expected_revision: match.revision, p_data: next,
@@ -236,6 +321,9 @@ async function route(ctx: any, path: string, body: any) {
     const committed = data?.[0];
     if (committed?.status === 'stale') return fail('stale_revision', '盤面が更新されています。');
     if (committed?.status === 'conflict') return fail('request_conflict', '同じ操作IDで異なる要求が届きました。');
+    // 決着した手を打った人が、3人分の報酬をまとめて確定する。
+    // ここで落ちても、各自の定期取得が同じ確定をやり直せる。
+    if (finished) await settleMatchRewards(ctx.db, next);
     return success(await viewOf(ctx.db, userId), { ...response, replay: committed?.status === 'replay' });
   }
   if (path === '/ranking') return success(await viewOf(ctx.db, userId), { ranking: [] });
