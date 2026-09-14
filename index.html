@@ -634,9 +634,21 @@ function readRoute() {
 
 /** 現在の状態をURLへ反映する（再読み込みしても同じ画面に戻れるように） */
 function syncUrl() {
-  if (!PATH_ROUTING) return;
-  let next = '/';
   const room = activeNet().view?.room;
+  if (!PATH_ROUTING) {
+    // GitHub Pages 等の単一ファイル配信では、現在のパス・他の query・hash を
+    // 保ったまま room だけを同期する。replaceState なので再読込は起こさない。
+    if (!/^https?:$/.test(location.protocol)) return;
+    try {
+      const next = new URL(location.href);
+      const code = room?.code || (app.view === 'online' ? app.pendingRoomCode : null);
+      if (code) next.searchParams.set('room', code);
+      else next.searchParams.delete('room');
+      if (next.href !== location.href) history.replaceState({ view: app.view }, '', next.href);
+    } catch { /* ignore */ }
+    return;
+  }
+  let next = '/';
   if (app.view === 'online' && room?.code) next = `/r/${room.code}`;
   else if (app.view === 'online' && app.pendingRoomCode) next = `/r/${app.pendingRoomCode}`;
   else if (app.view !== 'home') next = `/${app.view}`;
@@ -748,57 +760,53 @@ const ctx = {
       if (!hasSecureRandom()) {
         return { ok: false, message: '安全な乱数が利用できないため、抽選を実行できません。' };
       }
-      const r = pullGacha(localStore.profile, { count, requestId: newRequestId(), randomInt: secureRandomInt });
-      if (r.ok) {
-        const saved = localStore.save();
-        if (!saved.ok) toast('抽選結果を保存できませんでした（永続化されていません）。', 'error');
-      }
-      return r;
+      const requestId = newRequestId();
+      return localStore.transaction((draft) => pullGacha(draft.profile, {
+        count, requestId, randomInt: secureRandomInt,
+      }));
     },
     async train(charId) {
       if (app.mode === 'ONLINE') {
         const r = await activeNet().post('/api/train', { charId });
         return r.ok ? { ok: true, result: r.data.result.train, processed: !!r.data.result.processed } : r;
       }
-      const r = trainCharacter(localStore.profile, { charId, requestId: newRequestId() });
-      if (r.ok) localStore.save();
-      return r;
+      const requestId = newRequestId();
+      return localStore.transaction((draft) => trainCharacter(draft.profile, { charId, requestId }));
     },
     async equip(slot, id, charId) {
       if (app.mode === 'ONLINE') {
         const r = await activeNet().post('/api/equip', { slot, id, charId }, { durable: false });
         return r.ok ? { ok: true } : r;
       }
-      const r = equipCosmetic(localStore.profile, { slot, id, charId });
-      if (r.ok) localStore.save();
-      return r;
+      return localStore.transaction((draft) => equipCosmetic(draft.profile, { slot, id, charId }));
     },
     async resetEquip(scope, charId) {
       if (app.mode === 'ONLINE') {
         const r = await activeNet().post('/api/equip/reset', { scope, charId }, { durable: false });
         return r.ok ? { ok: true } : r;
       }
-      resetEquipToDefault(localStore.profile, { scope, charId });
-      localStore.save();
-      return { ok: true };
+      return localStore.transaction((draft) => {
+        resetEquipToDefault(draft.profile, { scope, charId });
+        return { ok: true };
+      });
     },
     async claimMission(missionId) {
       if (app.mode === 'ONLINE') {
         const r = await activeNet().post('/api/mission/claim', { missionId }, { durable: false });
         return r.ok ? { ok: true } : r;
       }
-      const r = claimMission(localStore.profile, missionId);
-      if (r.ok) localStore.save();
-      return r;
+      return localStore.transaction((draft) => claimMission(draft.profile, missionId));
     },
     async setName(name) {
       if (app.mode === 'ONLINE') {
         const r = await activeNet().post('/api/name', { name }, { durable: false });
         return r.ok ? { ok: true } : r;
       }
-      localStore.profile.name = name;
-      const saved = localStore.save();
-      return saved.ok ? { ok: true } : { ok: false, message: '保存できませんでした。' };
+      return localStore.transaction((draft) => {
+        draft.profile.name = name;
+        draft.profile.updatedAt = Date.now();
+        return { ok: true };
+      });
     },
   },
 };
@@ -936,11 +944,10 @@ function boot() {
   // 別タブによる保存変更
   localStore.onChange(() => render());
 
-  window.addEventListener('resize', () => { if (app.view === 'play') render(); });
   window.addEventListener('popstate', () => {
     const r = readRoute();
     app.view = r.view;
-    if (r.room) app.pendingRoomCode = r.room;
+    app.pendingRoomCode = r.room;
     render();
   });
 
@@ -978,7 +985,9 @@ async function detectOnlineBackend() {
     }
   }
 
-  const canProbeServer = !window.__TRIAD_LOCAL_ONLY__ && /^https?:$/.test(location.protocol);
+  const canProbeServer = !window.__TRIAD_LOCAL_ONLY__
+    && !window.__TRIAD_NO_PATH_ROUTING__
+    && /^https?:$/.test(location.protocol);
   if (canProbeServer) {
     try {
       const cfg = await fetch('/api/config').then((r) => r.json()).catch(() => null);
@@ -1014,6 +1023,7 @@ async function detectOnlineBackend() {
 }
 
 function handleOnlineView(view) {
+  if (view?.room?.code) app.pendingRoomCode = null;
   const m = view?.match;
   // 世界対戦が成立したら、待っている画面から対戦画面へ自動で移る
   if (m && m.status === 'playing' && app.onlineFxMatch !== m.matchId
@@ -2544,6 +2554,7 @@ __def("localstore.js", function (__req) {
 
 const { STORAGE_KEY, STORAGE_LOCK_KEY, LEGACY_STORAGE_KEYS, SAVE_VERSION } = __req("../../shared/constants.js");
 const { createProfile, normalizeProfile } = __req("../../shared/profile.js");
+const { TELEGRAPHS, STORY_STAGE_COUNT } = __req("../../shared/story/stages.js");
 
 const LOCK_TTL = 9000;
 const LOCK_BEAT = 3000;
@@ -2558,17 +2569,32 @@ class LocalStore {
     this.available = false;
     this.corrupt = false;
     this.corruptRaw = null;
-    this.writable = true;
+    this.writable = false;
     this.lastSaveOk = null;
     this.profile = createProfile({ id: 'local' });
     this.match = null;      // 進行中のローカル対戦 {state, setup}
     this.storyMatch = null; // 進行中の物語 {state}（3人対戦とは別枠で持つ）
     this.listeners = new Set();
+    this._usingWebLocks = typeof navigator !== 'undefined'
+      && !!navigator.locks && typeof navigator.locks.request === 'function';
+    this._webLockPending = false;
+    this._webLockHeld = false;
+    this._webLockEpoch = -1;
+    this._webLockRelease = null;
+    this._lockEpoch = 0;
     this._probe();
     this._acquireLock();
-    window.addEventListener('storage', (e) => this._onStorage(e));
+    this._boundStorage = (e) => this._onStorage(e);
+    this._boundPageHide = () => this._releaseLock();
+    this._boundPageShow = () => this._acquireLock();
+    this._boundVisibility = () => {
+      if (document.visibilityState === 'visible') this._acquireLock();
+    };
+    window.addEventListener('storage', this._boundStorage);
     this._beat = setInterval(() => this._acquireLock(), LOCK_BEAT);
-    window.addEventListener('pagehide', () => this._releaseLock());
+    window.addEventListener('pagehide', this._boundPageHide);
+    window.addEventListener('pageshow', this._boundPageShow);
+    document.addEventListener('visibilitychange', this._boundVisibility);
   }
 
   onChange(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
@@ -2587,27 +2613,122 @@ class LocalStore {
   }
 
   /* ── 単一タブ書込 ── */
-  _acquireLock() {
-    if (!this.available) return;
+  _setWritable(next) {
+    const value = !!next;
+    if (this.writable === value) return;
+    this.writable = value;
+    this._emit('lock');
+  }
+
+  _readLock() {
     try {
       const raw = localStorage.getItem(STORAGE_LOCK_KEY);
+      if (!raw) return null;
+      const value = JSON.parse(raw);
+      return value && typeof value === 'object' ? value : null;
+    } catch { return null; }
+  }
+
+  _otherLockIsLive(value, now = Date.now()) {
+    return !!(value && value.tabId !== this.tabId && now - Number(value.ts || 0) < LOCK_TTL);
+  }
+
+  _writeAndVerifyLock(now = Date.now()) {
+    localStorage.setItem(STORAGE_LOCK_KEY, JSON.stringify({ tabId: this.tabId, ts: now }));
+    const confirmed = this._readLock();
+    return !!confirmed && confirmed.tabId === this.tabId;
+  }
+
+  _becomeWritable() {
+    if (!this.writable) {
+      // 待機中に別タブが保存した最新状態を取り込んでから書込権を有効にする。
+      this.load({ keepMatch: false });
+    }
+    this._setWritable(true);
+  }
+
+  _acquireLock() {
+    if (!this.available) { this._setWritable(false); return; }
+    if (this._usingWebLocks) {
+      if (this._webLockHeld) {
+        if (this._webLockEpoch !== this._lockEpoch) { this._setWritable(false); return; }
+        try {
+          if (this._writeAndVerifyLock()) this._becomeWritable();
+          else this._setWritable(false);
+        } catch { this._setWritable(false); }
+        return;
+      }
+      this._acquireWebLock();
+      return;
+    }
+    this._acquireFallbackLock();
+  }
+
+  _acquireFallbackLock() {
+    try {
       const now = Date.now();
-      if (raw) {
-        const v = JSON.parse(raw);
-        if (v && v.tabId !== this.tabId && now - Number(v.ts || 0) < LOCK_TTL) {
-          if (this.writable) { this.writable = false; this._emit('lock'); }
+      const current = this._readLock();
+      if (this._otherLockIsLive(current, now)) {
+        this._setWritable(false);
+        return;
+      }
+      if (this._writeAndVerifyLock(now)) this._becomeWritable();
+      else this._setWritable(false);
+    } catch { this._setWritable(false); }
+  }
+
+  _acquireWebLock() {
+    if (this._webLockPending || this._webLockHeld || !this.available) return;
+    this._webLockPending = true;
+    const epoch = this._lockEpoch;
+    Promise.resolve(navigator.locks.request(STORAGE_LOCK_KEY, {
+      mode: 'exclusive', ifAvailable: true,
+    }, async (lock) => {
+      this._webLockPending = false;
+      if (!lock) { this._setWritable(false); return; }
+      if (epoch !== this._lockEpoch) {
+        this._setWritable(false);
+        if (document.visibilityState === 'visible') Promise.resolve().then(() => this._acquireLock());
+        return;
+      }
+      this._webLockHeld = true;
+      this._webLockEpoch = epoch;
+      try {
+        const current = this._readLock();
+        if (this._otherLockIsLive(current) || !this._writeAndVerifyLock()) {
+          this._setWritable(false);
           return;
         }
+        this._becomeWritable();
+        await new Promise((resolve) => { this._webLockRelease = resolve; });
+      } finally {
+        this._webLockRelease = null;
+        this._webLockHeld = false;
+        this._webLockEpoch = -1;
+        const current = this._readLock();
+        if (current?.tabId === this.tabId) {
+          try { localStorage.removeItem(STORAGE_LOCK_KEY); } catch { /* ignore */ }
+        }
+        this._setWritable(false);
+        if (document.visibilityState === 'visible') Promise.resolve().then(() => this._acquireLock());
       }
-      localStorage.setItem(STORAGE_LOCK_KEY, JSON.stringify({ tabId: this.tabId, ts: now }));
-      if (!this.writable) { this.writable = true; this._emit('lock'); }
-    } catch { /* ignore */ }
+    })).catch(() => {
+      this._webLockPending = false;
+      this._webLockHeld = false;
+      this._setWritable(false);
+      // API が露出していても利用を拒否する環境では、互換用ロックへ退避する。
+      this._usingWebLocks = false;
+      if (document.visibilityState === 'visible') this._acquireFallbackLock();
+    });
   }
 
   _releaseLock() {
+    this._lockEpoch += 1;
+    this._setWritable(false);
+    if (this._webLockRelease) this._webLockRelease();
     try {
-      const raw = localStorage.getItem(STORAGE_LOCK_KEY);
-      if (raw && JSON.parse(raw).tabId === this.tabId) localStorage.removeItem(STORAGE_LOCK_KEY);
+      const current = this._readLock();
+      if (current?.tabId === this.tabId) localStorage.removeItem(STORAGE_LOCK_KEY);
     } catch { /* ignore */ }
   }
 
@@ -2616,6 +2737,10 @@ class LocalStore {
       // 別タブの更新を取り込む（自分の状態で上書きしない）
       this.load({ keepMatch: false });
       this._emit('external');
+    } else if (e.key === STORAGE_LOCK_KEY) {
+      const current = this._readLock();
+      if (this._otherLockIsLive(current)) this._setWritable(false);
+      else this._acquireLock();
     }
   }
 
@@ -2661,19 +2786,56 @@ class LocalStore {
   }
 
   /* ── 保存 ── */
-  save() {
-    if (!this.available) { this.lastSaveOk = false; return { ok: false, reason: 'unavailable' }; }
-    if (!this.writable) { this.lastSaveOk = false; return { ok: false, reason: 'locked' }; }
-    if (this.corrupt) { this.lastSaveOk = false; return { ok: false, reason: 'corrupt' }; }
+  _writeBlockReason({ allowCorrupt = false } = {}) {
+    if (!this.available) return 'unavailable';
+    if (!this.writable) return 'locked';
+    if (!allowCorrupt && this.corrupt) return 'corrupt';
+    if (this._usingWebLocks && (!this._webLockHeld || this._webLockEpoch !== this._lockEpoch)) {
+      this._setWritable(false);
+      return 'locked';
+    }
+    try {
+      const current = this._readLock();
+      if (!current || current.tabId !== this.tabId || !this._writeAndVerifyLock()) {
+        this._setWritable(false);
+        return 'locked';
+      }
+    } catch {
+      this._setWritable(false);
+      return 'locked';
+    }
+    return null;
+  }
+
+  canWrite() { return this._writeBlockReason() == null; }
+
+  _clonePersisted() {
+    return JSON.parse(JSON.stringify({
+      profile: this.profile,
+      match: this.match,
+      storyMatch: this.storyMatch,
+    }));
+  }
+
+  _saveDraft(draft, { commit = true, allowCorrupt = false } = {}) {
+    const blocked = this._writeBlockReason({ allowCorrupt });
+    if (blocked) { this.lastSaveOk = false; return { ok: false, reason: blocked }; }
     try {
       const payload = JSON.stringify({
         version: SAVE_VERSION,
-        profile: this.profile,
-        match: this.match,
-        storyMatch: this.storyMatch,
+        profile: draft.profile,
+        match: draft.match,
+        storyMatch: draft.storyMatch,
         savedAt: Date.now(),
       });
       localStorage.setItem(STORAGE_KEY, payload);
+      if (commit) {
+        this.profile = draft.profile;
+        this.match = draft.match;
+        this.storyMatch = draft.storyMatch;
+        this.corrupt = false;
+        this.corruptRaw = null;
+      }
       this.lastSaveOk = true;
       return { ok: true };
     } catch (e) {
@@ -2682,28 +2844,62 @@ class LocalStore {
     }
   }
 
+  save() {
+    return this._saveDraft({
+      profile: this.profile,
+      match: this.match,
+      storyMatch: this.storyMatch,
+    }, { commit: false });
+  }
+
+  /**
+   * 永続状態の複製だけを変更し、保存成功後に初めてメモリへ確定する。
+   * mutator は同期処理とし、失敗結果を返した場合は保存も確定もしない。
+   */
+  transaction(mutator) {
+    const blocked = this._writeBlockReason();
+    if (blocked) {
+      this.lastSaveOk = false;
+      return { ok: false, code: 'save_blocked', reason: blocked, message: saveErrorMessage(blocked) };
+    }
+    const draft = this._clonePersisted();
+    let result;
+    try {
+      result = mutator(draft);
+    } catch (error) {
+      return { ok: false, code: 'mutation_error', reason: 'error', message: '操作を確定できませんでした。', error };
+    }
+    if (result && result.ok === false) return result;
+    const saved = this._saveDraft(draft, { commit: true });
+    if (!saved.ok) {
+      return { ok: false, code: 'save_failed', reason: saved.reason, message: saveErrorMessage(saved.reason) };
+    }
+    return result == null ? { ok: true } : result;
+  }
+
   /** 破損データを明示的に破棄して新規作成する（ユーザー確認後のみ呼ぶ） */
   discardCorruptAndReset() {
-    this.corrupt = false;
-    this.corruptRaw = null;
-    this.profile = createProfile({ id: 'local' });
-    this.match = null;
-    this.storyMatch = null;
-    return this.save();
+    return this._saveDraft({
+      profile: createProfile({ id: 'local' }),
+      match: null,
+      storyMatch: null,
+    }, { commit: true, allowCorrupt: true });
   }
 
   resetAll() {
-    this.profile = createProfile({ id: 'local' });
-    this.match = null;
-    this.storyMatch = null;
-    return this.save();
+    return this.transaction((draft) => {
+      draft.profile = createProfile({ id: 'local' });
+      draft.match = null;
+      draft.storyMatch = null;
+      return { ok: true };
+    });
   }
 
-  setMatch(match) { this.match = match; return this.save(); }
-  clearMatch() { this.match = null; return this.save(); }
+  setMatch(match) { return this.transaction((draft) => { draft.match = match; return { ok: true }; }); }
+  clearMatch() { return this.transaction((draft) => { draft.match = null; return { ok: true }; }); }
 
-  setStoryMatch(m) { this.storyMatch = m; return this.save(); }
-  clearStoryMatch() { this.storyMatch = null; return this.save(); }
+  setStoryMatch(m) { return this.transaction((draft) => { draft.storyMatch = m; return { ok: true }; }); }
+  clearStoryMatch() { return this.transaction((draft) => { draft.storyMatch = null; return { ok: true }; }); }
 
   /* ── 書き出し / 読み込み ── */
   exportJson() {
@@ -2732,11 +2928,21 @@ class LocalStore {
   }
 
   applyImported(profile) {
-    this.profile = profile;
-    this.match = null;
-    this.storyMatch = null;
-    return this.save();
+    return this.transaction((draft) => {
+      draft.profile = JSON.parse(JSON.stringify(profile));
+      draft.match = null;
+      draft.storyMatch = null;
+      return { ok: true };
+    });
   }
+}
+
+function saveErrorMessage(reason) {
+  if (reason === 'locked') return '別のタブが保存を使用中です。このタブでは操作を確定できません。';
+  if (reason === 'unavailable') return 'この環境では保存を利用できないため、操作を確定できません。';
+  if (reason === 'corrupt') return '保存データが破損しているため、操作を確定できません。';
+  if (reason === 'quota') return '保存容量が不足しているため、操作を確定できません。';
+  return '保存できなかったため、操作は確定されませんでした。';
 }
 
 /** 進行中の物語の形式検証（1対1・物語の状態を持つものだけ受け付ける） */
@@ -2745,10 +2951,20 @@ function validateStoryMatch(m) {
   const s = m.state;
   if (!Array.isArray(s.stones) || !Array.isArray(s.guards) || !Array.isArray(s.ice)) return null;
   if (!Number.isInteger(s.width) || !Number.isInteger(s.height)) return null;
-  if (s.stones.length !== s.width * s.height) return null;
+  const size = s.width * s.height;
+  if (s.stones.length !== size || s.guards.length !== size || s.ice.length !== size) return null;
+  if (s.iceOwner != null && (!Array.isArray(s.iceOwner) || s.iceOwner.length !== size)) return null;
   if (!Array.isArray(s.seats) || s.seats.length !== 2) return null;
   if (!s.story || typeof s.story !== 'object') return null;
-  if (!Number.isInteger(s.story.stageId)) return null;
+  if (!Number.isInteger(s.story.stageId) || s.story.stageId < 1 || s.story.stageId > STORY_STAGE_COUNT) return null;
+  const pending = s.story.telegraph;
+  if (pending != null) {
+    if (!pending || typeof pending !== 'object' || !TELEGRAPHS[pending.id]) return null;
+    if (pending.seat !== 2 || !Number.isInteger(pending.declaredAt)) return null;
+    if (!Array.isArray(pending.targets) || pending.targets.some((index) => (
+      !Number.isInteger(index) || index < 0 || index >= size
+    ))) return null;
+  }
   if (s.status !== 'playing') return null;
   return m;
 }
@@ -2758,8 +2974,10 @@ function validateMatch(m) {
   if (!m || typeof m !== 'object' || !m.state) return null;
   const s = m.state;
   if (!Array.isArray(s.stones) || !Array.isArray(s.guards) || !Array.isArray(s.ice)) return null;
-  if (!Number.isInteger(s.width) || !Number.isInteger(s.height)) return null;
-  if (s.stones.length !== s.width * s.height) return null;
+  if (!Number.isInteger(s.width) || !Number.isInteger(s.height) || s.width <= 0 || s.height <= 0) return null;
+  const size = s.width * s.height;
+  if (s.stones.length !== size || s.guards.length !== size || s.ice.length !== size) return null;
+  if (s.iceOwner != null && (!Array.isArray(s.iceOwner) || s.iceOwner.length !== size)) return null;
   if (!Array.isArray(s.seats) || s.seats.length !== 3) return null;
   if (s.status !== 'playing') return null;
   return m;
@@ -4843,7 +5061,7 @@ class Net {
             message: verified?.message || '人間確認に失敗しました。もう一度お試しください。',
           };
         }
-        return this.post(path, body, { ...opts, requestId, _afterHuman: true });
+        return this.post(path, body, { ...opts, requestId, _afterHuman: true, retryOfPending: true });
       }
       // サーバーが明確に拒否した＝失敗確定
       if (durable) this._removePending(requestId);
@@ -5025,10 +5243,15 @@ class DbNet {
     this._subRoomCode = null;
     this._subMatchId = null;
     this._beat = null;
+    this._connectionStarted = false;
+    this._connectPromise = null;
+    this._visibilityHandler = null;
     this._seq = 0;
     this._initPromise = null;
     this._appliedRewardFor = new Set();
+    this._rewardingFor = new Set();
     this._actionRequests = new Map();
+    this._profileQueue = Promise.resolve();
     this._lastError = null;
   }
 
@@ -5086,9 +5309,25 @@ class DbNet {
     }
   }
 
-  async _writeProfile() {
-    this.profile.updatedAt = Date.now();
-    await this.db.doc(`players/${this.me}`).set(this.profile);
+  async _writeProfile(profile = this.profile) {
+    profile.updatedAt = Date.now();
+    await this.db.doc(`players/${this.me}`).set(profile);
+  }
+
+  /** 共有プロフィールも、書込成功後にだけメモリへ確定する。 */
+  _mutateProfile(mutator, { shouldSave = () => true } = {}) {
+    const run = async () => {
+      const draft = JSON.parse(JSON.stringify(this.profile));
+      const result = mutator(draft);
+      if (result && result.ok === false) return result;
+      if (!shouldSave(result)) return result;
+      await this._writeProfile(draft);
+      this.profile = draft;
+      return result;
+    };
+    const operation = this._profileQueue.then(run, run);
+    this._profileQueue = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 
   _onDbError(e) {
@@ -5099,16 +5338,21 @@ class DbNet {
   /* ───────────────────── 接続 ───────────────────── */
 
   connect() {
-    this.ensure().then((ok) => {
+    if (this._connectionStarted) return this._connectPromise;
+    this._connectionStarted = true;
+    this._connectPromise = this.ensure().then((ok) => {
       if (!ok) { this._setStatus('offline'); this._publish(); return; }
       this._setStatus('online');
       this._startHeartbeat();
       this._resubscribe();
       this._publish();
     }).catch(() => this._setStatus('offline'));
+    return this._connectPromise;
   }
 
   disconnect() {
+    this._connectionStarted = false;
+    this._connectPromise = null;
     this._stopHeartbeat();
     for (const k of ['room', 'match', 'presence']) {
       if (typeof this._subs[k] === 'function') this._subs[k]();
@@ -5124,11 +5368,20 @@ class DbNet {
     const beat = () => { this._writePresence().catch(() => {}); };
     beat();
     this._beat = setInterval(beat, HEARTBEAT_MS);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) beat(); });
+    if (!this._visibilityHandler) {
+      this._visibilityHandler = () => {
+        if (!document.hidden && this._connectionStarted) beat();
+      };
+      document.addEventListener('visibilitychange', this._visibilityHandler);
+    }
   }
 
   _stopHeartbeat() {
     if (this._beat) { clearInterval(this._beat); this._beat = null; }
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
   }
 
   async _writePresence() {
@@ -5283,24 +5536,27 @@ class DbNet {
     if (!seat) return;
     const finished = m.status === 'finished' || m.status === 'aborted';
     if (!finished) return;
-    if (this._appliedRewardFor.has(m.matchId)) return;
-    this._appliedRewardFor.add(m.matchId);
+    if (this._appliedRewardFor.has(m.matchId) || this._rewardingFor.has(m.matchId)) return;
+    this._rewardingFor.add(m.matchId);
 
     let outcome = 'draw';
     if (m.status === 'aborted') outcome = 'aborted';
     else outcome = outcomeForSeat(m.state.result, seat.seat);
 
     // 報酬は自分のプロフィールへ自分だけが書き込む。試合ID で二重付与を防ぐ。
-    const before = this.profile.perica;
-    grantMatchReward(this.profile, {
-      matchId: m.matchId,
-      outcome,
-      charId: seat.charId,
-      stonesPlaced: m.state.stats?.[seat.seat]?.placed || 0,
-      skillsUsed: m.state.stats?.[seat.seat]?.skills || 0,
-    });
-    if (this.profile.perica !== before || outcome !== 'aborted') {
-      try { await this._writeProfile(); } catch { /* 次回の書き込みで復帰する */ }
+    try {
+      const reward = await this._mutateProfile((draft) => grantMatchReward(draft, {
+        matchId: m.matchId,
+        outcome,
+        charId: seat.charId,
+        stonesPlaced: m.state.stats?.[seat.seat]?.placed || 0,
+        skillsUsed: m.state.stats?.[seat.seat]?.skills || 0,
+      }));
+      if (reward?.ok) this._appliedRewardFor.add(m.matchId);
+    } catch {
+      // snapshot / presence の次回更新で再試行できるよう applied には入れない。
+    } finally {
+      this._rewardingFor.delete(m.matchId);
     }
     this._publish();
   }
@@ -5377,25 +5633,29 @@ class DbNet {
 
   async resolvePending() { return []; }
 
-  async post(path, body = {}) {
+  async post(path, body = {}, _opts = {}) {
+    const requestId = body.requestId || newRequestId();
+    const payload = { ...body, requestId };
     try {
       const ready = await this.ensure();
       if (!ready) return fail('unavailable', 'このページではアカウント接続の対戦を利用できません。');
+      // Net/SupaNet と同じく1操作に1つのIDを割り当てる。呼出側が再送用IDを
+      // 渡した場合は上書きせず、開始・着手・ガチャ・育成の重複防止へ渡す。
       switch (path) {
         case '/api/me': this._publish(); return done({});
-        case '/api/name': return this._setName(body);
-        case '/api/room/create': return this._createRoom(body);
-        case '/api/room/join': return this._joinRoom(body);
-        case '/api/room/char': return this._setChar(body);
-        case '/api/room/ready': return this._setReady(body);
+        case '/api/name': return this._setName(payload);
+        case '/api/room/create': return this._createRoom(payload);
+        case '/api/room/join': return this._joinRoom(payload);
+        case '/api/room/char': return this._setChar(payload);
+        case '/api/room/ready': return this._setReady(payload);
         case '/api/room/leave': return this._leaveRoom();
-        case '/api/room/start': return this._startMatch(body);
-        case '/api/match/action': return this._matchAction(body);
-        case '/api/gacha': return this._gacha(body);
-        case '/api/train': return this._train(body);
-        case '/api/equip': return this._equip(body);
-        case '/api/equip/reset': return this._equipReset(body);
-        case '/api/mission/claim': return this._claimMission(body);
+        case '/api/room/start': return this._startMatch(payload);
+        case '/api/match/action': return this._matchAction(payload);
+        case '/api/gacha': return this._gacha(payload);
+        case '/api/train': return this._train(payload);
+        case '/api/equip': return this._equip(payload);
+        case '/api/equip/reset': return this._equipReset(payload);
+        case '/api/mission/claim': return this._claimMission(payload);
         default: return fail('not_found', 'その操作はありません。');
       }
     } catch (e) {
@@ -5404,15 +5664,17 @@ class DbNet {
         this._setStatus('offline');
         return fail(code, 'このページのデータ機能を利用できなくなりました。ページを開き直してください。');
       }
-      return { ok: false, status: 'unknown', code, message: '通信が確認できませんでした。もう一度お試しください。' };
+      return { ok: false, status: 'unknown', code, requestId, message: '通信が確認できませんでした。もう一度お試しください。' };
     }
   }
 
   async _setName(body) {
     const name = String(body.name || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 16);
     if (!name) return fail('bad_name', '名前を入力してください。');
-    this.profile.name = name;
-    await this._writeProfile();
+    await this._mutateProfile((draft) => {
+      draft.name = name;
+      return { ok: true };
+    });
     if (this.room) {
       await this._withRoomLock(this.room.code, async (room, ref) => {
         if (!room) return null;
@@ -5674,49 +5936,49 @@ class DbNet {
   /* ── 経済 ── */
 
   async _gacha({ count, requestId }) {
-    const r = pullGacha(this.profile, {
+    const r = await this._mutateProfile((draft) => pullGacha(draft, {
       count: Number(count),
       requestId: requestId || newRequestId(),
       randomInt: secureRandomInt,
       ledgerLimits: LEDGER_LIMITS,
-    });
+    }), { shouldSave: (result) => !result?.replay });
     if (!r.ok) return fail(r.code, r.message);
-    if (!r.replay) await this._writeProfile();
     this._publish();
     return done({ gacha: r.result, replay: !!r.replay, processed: !!r.processed, message: r.message });
   }
 
   async _train({ charId, requestId }) {
-    const r = trainCharacter(this.profile, {
+    const r = await this._mutateProfile((draft) => trainCharacter(draft, {
       charId: String(charId || ''),
       requestId: requestId || newRequestId(),
       ledgerLimits: LEDGER_LIMITS,
-    });
+    }), { shouldSave: (result) => !result?.replay });
     if (!r.ok) return fail(r.code, r.message);
-    if (!r.replay) await this._writeProfile();
     this._publish();
     return done({ train: r.result, replay: !!r.replay, processed: !!r.processed });
   }
 
   async _equip({ slot, id, charId }) {
-    const r = equipCosmetic(this.profile, { slot: String(slot || ''), id: String(id || ''), charId: charId ? String(charId) : null });
+    const r = await this._mutateProfile((draft) => equipCosmetic(draft, {
+      slot: String(slot || ''), id: String(id || ''), charId: charId ? String(charId) : null,
+    }));
     if (!r.ok) return fail('equip_rejected', r.message);
-    await this._writeProfile();
     this._publish();
     return done({ equipped: true });
   }
 
   async _equipReset({ scope, charId }) {
-    resetEquipToDefault(this.profile, { scope: scope || 'all', charId: charId || null });
-    await this._writeProfile();
+    await this._mutateProfile((draft) => {
+      resetEquipToDefault(draft, { scope: scope || 'all', charId: charId || null });
+      return { ok: true };
+    });
     this._publish();
     return done({ reset: true });
   }
 
   async _claimMission({ missionId }) {
-    const r = claimMission(this.profile, String(missionId || ''));
+    const r = await this._mutateProfile((draft) => claimMission(draft, String(missionId || '')));
     if (!r.ok) return fail('mission_rejected', r.message);
-    await this._writeProfile();
     this._publish();
     return done({ mission: r.result });
   }
@@ -7338,6 +7600,7 @@ const { newRequestId } = __req("util.js");
 const SESSION_KEY = 'triad.supabase.session.v1';
 const PENDING_KEY = 'triad.online.pending.v1';
 const REQ_TIMEOUT_MS = 12000;
+const AUTH_TIMEOUT_MS = 12000;
 
 /** 画面の状態に応じた取得間隔（ミリ秒） */
 const POLL_MATCH = 1200;
@@ -7352,7 +7615,7 @@ function readConfig() {
 
 class SupaNet {
   constructor() {
-    this.status = 'offline'; // offline | connecting | online
+    this.status = 'offline'; // offline | connecting | online | auth_error | server_error
     this.view = null;
     this.session = null;
     this.listeners = { state: new Set(), status: new Set(), error: new Set() };
@@ -7364,7 +7627,11 @@ class SupaNet {
     this._hb = null;
     this._ref = 0;
     this._inflight = false;
-    this._lastRevision = -1;
+    this._refreshQueued = false;
+    this._refreshPromise = null;
+    this._connectPromise = null;
+    this._lastTopicSignature = '';
+    this._reconnectTimer = null;
     this._authError = null;
   }
 
@@ -7394,56 +7661,114 @@ class SupaNet {
   }
 
   _saveSession(s) {
+    const previousToken = this.session?.access_token || null;
     this.session = s;
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch { /* ignore */ }
+    if (previousToken && previousToken !== s?.access_token && this._ws) this._restartSocket();
   }
 
   _clearSession() {
     this.session = null;
     try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    this._lastTopicSignature = '';
+    this._closeSocket();
   }
 
   async _authFetch(path, body) {
-    const res = await fetch(`${this.config.url}/auth/v1/${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: this.config.anonKey },
-      body: JSON.stringify(body ?? {}),
-    });
-    const data = await res.json().catch(() => ({}));
-    return { ok: res.ok, status: res.status, data };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AUTH_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${this.config.url}/auth/v1/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: this.config.anonKey },
+        body: JSON.stringify(body ?? {}),
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    } catch (e) {
+      return {
+        ok: false,
+        status: 0,
+        data: {},
+        code: e?.name === 'AbortError' ? 'auth_timeout' : 'auth_network',
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
-  /** ゲストとして入る。すでに保存されたセッションがあればそれを使う。 */
-  async ensureSession() {
-    if (!this.config) return { ok: false, code: 'no_config', message: 'オンライン設定がありません。' };
-
-    if (!this.session) this.session = this._loadSession();
-
-    // 期限が近ければ更新する（60秒の余裕）
-    if (this.session) {
-      const exp = Number(this.session.expires_at || 0) * 1000;
-      if (!exp || exp - Date.now() > 60_000) return { ok: true };
-      const r = await this._authFetch('token?grant_type=refresh_token',
-        { refresh_token: this.session.refresh_token });
-      if (r.ok && r.data?.access_token) {
-        this._saveSession(r.data);
-        return { ok: true };
-      }
-      // 更新できないセッションは捨てて作り直す
-      this._clearSession();
-    }
-
+  async _createAnonymousSession() {
     const r = await this._authFetch('signup', { data: {} });
     if (r.ok && r.data?.access_token) {
+      this._authError = null;
       this._saveSession(r.data);
-      return { ok: true };
+      if (!this._stopped) this._openSocket();
+      return { ok: true, created: true };
     }
     if (r.data?.error_code === 'anonymous_provider_disabled') {
       this._authError = 'ゲスト参加が有効になっていません。';
       return { ok: false, code: 'anonymous_disabled', message: this._authError };
     }
-    this._authError = r.data?.msg || 'ログインできませんでした。';
-    return { ok: false, code: r.data?.error_code || 'auth_failed', message: this._authError };
+    this._authError = r.data?.msg || (r.code === 'auth_timeout'
+      ? 'ログイン処理がタイムアウトしました。'
+      : 'ログインできませんでした。');
+    return { ok: false, code: r.data?.error_code || r.code || 'auth_failed', message: this._authError };
+  }
+
+  /** ゲストとして入る。401後は期限に関係なくrefreshを1本だけ実行する。 */
+  async ensureSession({ forceRefresh = false, invalidAccessToken = null } = {}) {
+    if (!this.config) return { ok: false, code: 'no_config', message: 'オンライン設定がありません。' };
+
+    if (!this.session) this.session = this._loadSession();
+
+    // 別の同時リクエストが、同じ利用者のトークンをすでに更新している。
+    if (forceRefresh && invalidAccessToken && this.session?.access_token
+      && this.session.access_token !== invalidAccessToken) {
+      const beforeUser = this._userIdOf(invalidAccessToken);
+      const afterUser = this._userIdOf(this.session.access_token);
+      if (beforeUser && beforeUser === afterUser) return { ok: true, refreshed: true };
+      return { ok: false, code: 'session_replaced', message: 'セッションが更新されました。操作をもう一度確認してください。' };
+    }
+
+    // 通常時は期限が60秒以上残っていればそのまま使う。
+    if (this.session) {
+      const exp = Number(this.session.expires_at || 0) * 1000;
+      if (!forceRefresh && (!exp || exp - Date.now() > 60_000)) return { ok: true };
+    }
+
+    // 同じタブ内の同時401・同時起動を1回のrefresh/signupへまとめる。
+    if (this._refreshPromise) return this._refreshPromise;
+    const hadSession = !!this.session;
+    const task = (async () => {
+      if (this.session?.refresh_token) {
+        const r = await this._authFetch('token?grant_type=refresh_token',
+          { refresh_token: this.session.refresh_token });
+        if (r.ok && r.data?.access_token) {
+          this._authError = null;
+          this._saveSession(r.data);
+          return { ok: true, refreshed: true };
+        }
+        this._clearSession();
+      }
+
+      const created = await this._createAnonymousSession();
+      // 401を受けた操作は、別の匿名利用者として自動再送しない。
+      if (forceRefresh && hadSession && created.ok) {
+        return {
+          ok: false,
+          code: 'session_replaced',
+          message: 'ログイン状態を作り直しました。二重操作を避けるため、内容を確認してもう一度実行してください。',
+        };
+      }
+      return created;
+    })();
+    this._refreshPromise = task;
+    try {
+      return await task;
+    } finally {
+      if (this._refreshPromise === task) this._refreshPromise = null;
+    }
   }
 
   _headers() {
@@ -7458,20 +7783,37 @@ class SupaNet {
 
   async connect() {
     if (!this.config) return;
+    // renderOnline() は描画ごとに connect() を呼ぶため、接続開始は1回にまとめる。
+    if (!this._stopped) return this._connectPromise || Promise.resolve();
     this._stopped = false;
     this._setStatus('connecting');
+    this._bindRecoveryEvents();
 
-    const s = await this.ensureSession();
-    if (!s.ok) {
-      this._setStatus('offline');
-      this._emit('error', s);
-      return;
+    const task = (async () => {
+      const s = await this.ensureSession();
+      if (this._stopped) return;
+      if (!s.ok) {
+        this._setStatus(s.code === 'anonymous_disabled' || String(s.code || '').startsWith('auth_')
+          ? 'auth_error' : 'connecting');
+        this._emit('error', s);
+        this._schedule();
+        return;
+      }
+
+      await this.refresh();
+      if (this._stopped) return;
+      this._schedule();
+      this._openSocket();
+    })();
+    this._connectPromise = task;
+    try {
+      await task;
+    } finally {
+      if (this._connectPromise === task) this._connectPromise = null;
     }
+  }
 
-    await this.refresh();
-    this._schedule();
-    this._openSocket();
-
+  _bindRecoveryEvents() {
     // 画面が戻ったとき・回線が戻ったときは即座に取り直す（§19）
     if (!this._boundVisibility) {
       this._boundVisibility = () => {
@@ -7511,7 +7853,8 @@ class SupaNet {
 
   /** サーバーから正式な状態を取り直す。待機中なら成立確認も兼ねる。 */
   async refresh() {
-    if (this._stopped || this._inflight) return;
+    if (this._stopped) return;
+    if (this._inflight) { this._refreshQueued = true; return; }
     this._inflight = true;
     try {
       // 公開ルーム（世界対戦）で待っている間は world/poll を使う。
@@ -7521,29 +7864,49 @@ class SupaNet {
       const inQueue = this.view?.queue?.status === 'queued';
       const usePoll = inQueue || inPublicLobby;
       const r = await this.post(usePoll ? '/api/world/poll' : '/api/me', {}, { durable: false, quiet: true });
-      if (r.ok || r.status === 'failed') this._setStatus('online');
+      if (r.ok) this._setStatus('online');
+      else if (r.httpStatus === 401 || r.code === 'session_replaced'
+        || r.code === 'anonymous_disabled' || String(r.code || '').startsWith('auth_')) {
+        this._setStatus('auth_error');
+      } else if (r.status === 'failed') this._setStatus('server_error');
       else this._setStatus('connecting');
     } finally {
       this._inflight = false;
+      if (this._refreshQueued && !this._stopped) {
+        this._refreshQueued = false;
+        Promise.resolve().then(() => this.refresh());
+      }
     }
   }
 
   _applyView(view) {
     if (!view) return;
+    // 遅れて返った同一対戦の古いpollで、より新しい盤面を巻き戻さない。
+    const currentMatch = this.view?.match;
+    const incomingMatch = view.match;
+    if (currentMatch?.matchId && incomingMatch?.matchId === currentMatch.matchId
+      && Number(incomingMatch.revision ?? -1) < Number(currentMatch.revision ?? -1)) {
+      view = { ...view, match: currentMatch };
+    }
     this.view = view;
-    const rev = view.match?.revision ?? -1;
-    if (rev !== this._lastRevision) {
-      this._lastRevision = rev;
+    const signature = this._topicSignature(view);
+    if (signature !== this._lastTopicSignature) {
+      this._lastTopicSignature = signature;
       this._syncSocketTopics();
     }
     this._emit('state', view);
   }
 
+  _topicSignature(view = this.view) {
+    return [this._userId() || '', view?.room?.code || '', view?.match?.matchId || ''].join('|');
+  }
+
   /* ───────────────────────── Realtime（補助） ───────────────────────── */
 
   _openSocket() {
-    if (!this.config || this._stopped) return;
+    if (!this.config || !this.session || this._stopped) return;
     if (this._ws && (this._ws.readyState === 0 || this._ws.readyState === 1)) return;
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     let url;
     try {
       url = `${this.config.url.replace(/^http/, 'ws')}/realtime/v1/websocket`
@@ -7556,6 +7919,7 @@ class SupaNet {
     this._wsTopics = new Set();
 
     ws.addEventListener('open', () => {
+      if (this._hb) clearInterval(this._hb);
       this._hb = setInterval(() => {
         try {
           ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++this._ref) }));
@@ -7567,7 +7931,15 @@ class SupaNet {
     ws.addEventListener('message', (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
-      if (!msg || msg.event === 'phx_reply' || msg.event === 'presence_state') return;
+      if (!msg) return;
+      if (msg.event === 'phx_reply') {
+        // join拒否を購読済みとして残さず、次回同期で再試行できるようにする。
+        if (msg.payload?.status === 'error' && String(msg.topic || '').startsWith('realtime:')) {
+          this._wsTopics.delete(String(msg.topic).slice('realtime:'.length));
+        }
+        return;
+      }
+      if (msg.event === 'presence_state') return;
       // 中身は信用しない。変化の合図として、正式な状態を取り直す（§13）
       if (msg.event === 'postgres_changes' || msg.event === 'broadcast'
         || msg.event === 'presence_diff' || msg.event === 'system') {
@@ -7575,20 +7947,47 @@ class SupaNet {
       }
     });
 
+    let doneCalled = false;
     const done = () => {
+      if (doneCalled) return;
+      doneCalled = true;
       if (this._hb) { clearInterval(this._hb); this._hb = null; }
-      if (this._ws === ws) this._ws = null;
+      const intentional = this._closingSocket === ws;
+      if (intentional) this._closingSocket = null;
+      if (this._ws === ws) {
+        this._ws = null;
+        this._wsTopics = new Set();
+      }
       // Realtime が無くても定期取得で遊べる。少し待って張り直す。
-      if (!this._stopped) setTimeout(() => this._openSocket(), 5000);
+      if (!intentional && !this._stopped && !this._reconnectTimer) {
+        this._reconnectTimer = setTimeout(() => {
+          this._reconnectTimer = null;
+          this._openSocket();
+        }, 5000);
+      }
     };
     ws.addEventListener('close', done);
-    ws.addEventListener('error', done);
+    ws.addEventListener('error', () => {
+      done();
+      try { ws.close(); } catch { /* ignore */ }
+    });
   }
 
   _closeSocket() {
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     if (this._hb) { clearInterval(this._hb); this._hb = null; }
-    if (this._ws) { try { this._ws.close(); } catch { /* ignore */ } this._ws = null; }
+    if (this._ws) {
+      const ws = this._ws;
+      this._closingSocket = ws;
+      this._ws = null;
+      try { ws.close(); } catch { /* ignore */ }
+    }
     this._wsTopics = new Set();
+  }
+
+  _restartSocket() {
+    this._closeSocket();
+    if (!this._stopped && this.session) this._openSocket();
   }
 
   /** いま必要なチャンネルへ参加する（対戦・ルーム・本人宛） */
@@ -7601,9 +8000,22 @@ class SupaNet {
     if (this.view?.match?.matchId) want.add(`match:${this.view.match.matchId}`);
     if (this.view?.room?.code) want.add(`room:${this.view.room.code}`);
 
+    // 先に不要な購読を解除する。送信結果によらずローカル管理からは外す。
+    for (const topic of [...this._wsTopics]) {
+      if (want.has(topic)) continue;
+      this._wsTopics.delete(topic);
+      try {
+        ws.send(JSON.stringify({
+          topic: `realtime:${topic}`,
+          event: 'phx_leave',
+          payload: {},
+          ref: String(++this._ref),
+        }));
+      } catch { /* 次の正式状態取得はpollingが担う */ }
+    }
+
     for (const topic of want) {
       if (this._wsTopics.has(topic)) continue;
-      this._wsTopics.add(topic);
       const table = topic.startsWith('match:') ? 'matches'
         : topic.startsWith('room:') ? 'rooms' : 'matchmaking_queue';
       try {
@@ -7621,17 +8033,22 @@ class SupaNet {
             access_token: this.session?.access_token,
           },
         }));
+        // sendに成功したtopicだけを購読済みとして扱う。
+        this._wsTopics.add(topic);
       } catch { /* ignore */ }
     }
   }
 
-  _userId() {
+  _userIdOf(token) {
     try {
-      const t = this.session?.access_token;
-      if (!t) return null;
-      const p = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      if (!token) return null;
+      const p = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
       return JSON.parse(atob(p + '='.repeat((4 - (p.length % 4)) % 4)))?.sub || null;
     } catch { return null; }
+  }
+
+  _userId() {
+    return this._userIdOf(this.session?.access_token);
   }
 
   /* ───────────────────────── 未確認操作 ───────────────────────── */
@@ -7660,10 +8077,8 @@ class SupaNet {
 
   async post(path, body = {}, opts = {}) {
     if (!this.config) return { ok: false, status: 'failed', code: 'no_config', message: 'オンライン設定がありません。' };
-    if (!this.session) {
-      const s = await this.ensureSession();
-      if (!s.ok) return { ok: false, status: 'failed', code: s.code, message: s.message };
-    }
+    const ready = await this.ensureSession();
+    if (!ready.ok) return { ok: false, status: 'failed', code: ready.code, message: ready.message };
 
     const requestId = opts.requestId || (opts.idempotent === false ? null : newRequestId());
     const payload = requestId ? { ...body, requestId } : { ...body };
@@ -7674,17 +8089,19 @@ class SupaNet {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || REQ_TIMEOUT_MS);
     try {
+      const rejectedToken = this.session?.access_token || null;
       let res = await fetch(url, {
         method: 'POST', headers: this._headers(), body: JSON.stringify(payload), signal: ctrl.signal,
       });
-      // 期限切れなら1度だけ更新して送り直す
+      let authFailure = null;
+      // 401なら、有効期限表示に関係なくrefreshして同じ本文を1度だけ送り直す。
       if (res.status === 401) {
-        const s = await this.ensureSession();
+        const s = await this.ensureSession({ forceRefresh: true, invalidAccessToken: rejectedToken });
         if (s.ok) {
           res = await fetch(url, {
             method: 'POST', headers: this._headers(), body: JSON.stringify(payload), signal: ctrl.signal,
           });
-        }
+        } else authFailure = s;
       }
       const data = await res.json().catch(() => ({}));
       if (data && data.view) this._applyView(data.view);
@@ -7694,11 +8111,16 @@ class SupaNet {
         return { ok: true, status: 'ok', data, requestId };
       }
       if (durable) this._removePending(requestId);
+      const httpStatus = res.status;
+      if (httpStatus === 401 || authFailure) this._setStatus('auth_error');
+      else if (httpStatus >= 500) this._setStatus('server_error');
       return {
         ok: false, status: 'failed',
-        code: data.code || `http_${res.status}`,
-        message: data.message || '操作を実行できませんでした。',
+        code: authFailure?.code || data.code || `http_${httpStatus}`,
+        message: authFailure?.message || data.message || '操作を実行できませんでした。',
         data,
+        httpStatus,
+        requestId,
       };
     } catch (e) {
       return {
@@ -8263,14 +8685,23 @@ function startLocalMatch(ctx) {
   }));
   const matchId = `local_${newRequestId()}`;
   const state = createMatch({ matchId, mode: 'local', seats, startSeat: pickStartSeat() });
+  const saved = ctx.localStore.transaction((draft) => {
+    draft.match = { state, setup: { mode: setupDraft.mode } };
+    draft.profile.lastCharId = setupDraft.chars[0];
+    draft.profile.updatedAt = Date.now();
+    return { ok: true };
+  });
+  if (!saved.ok) {
+    audio.playSfx('error');
+    toast(saved.message || '対戦を保存できないため開始できませんでした。', 'error');
+    return false;
+  }
   clearCpuTimer();
   fx.reset();
   resetSelection(false);
-  ctx.localStore.setMatch({ state, setup: { mode: setupDraft.mode } });
-  profile.lastCharId = setupDraft.chars[0];
-  ctx.localStore.save();
   audio.setTrack('match');
   ctx.refresh();
+  return true;
 }
 
 /* ─────────────────────────── セッション抽象 ─────────────────────────── */
@@ -8292,39 +8723,58 @@ function buildLocalSession(ctx, local) {
     async submit(action) {
       const res = applyAction(local.state, action);
       if (!res.ok) { audio.playSfx('error'); toast(res.message, 'error'); return false; }
+      const saved = res.state.status === 'finished'
+        ? finishLocal(ctx, res.state, local.setup)
+        : ctx.localStore.setMatch({ state: res.state, setup: local.setup });
+      if (!saved.ok) {
+        audio.playSfx('error');
+        toast(saved.message || '着手を保存できなかったため、操作前の盤面に戻しました。', 'error');
+        ctx.refresh();
+        return false;
+      }
       local.state = res.state;
-      ctx.localStore.setMatch({ state: res.state, setup: local.setup });
       fx.play(res.event, boardView);
-      if (res.state.status === 'finished') finishLocal(ctx, res.state);
       return true;
     },
     async abort() {
-      const state = local.state;
+      const state = cloneState(local.state);
       state.status = 'finished';
       state.result = { kind: 'aborted', winner: 0, line: [], reason: 'left' };
-      finishLocal(ctx, state);
+      state.finishedAt = Date.now();
+      const saved = finishLocal(ctx, state, local.setup);
+      if (!saved.ok) {
+        audio.playSfx('error');
+        toast(saved.message || '中止状態を保存できなかったため、対戦は継続しています。', 'error');
+        ctx.refresh();
+        return false;
+      }
+      ctx.refresh();
+      return true;
     },
   };
 }
 
-function finishLocal(ctx, state) {
+function finishLocal(ctx, state, setup = ctx.localStore.match?.setup || { mode: 'cpu' }) {
   clearCpuTimer();
-  const profile = ctx.localStore.profile;
   const seat1 = state.seats.find((s) => s.seat === 1);
   const outcome = outcomeForSeat(state.result, 1);
-  // ローカルでは P1 のプロフィールだけに報酬を付与する
-  const r = grantMatchReward(profile, {
-    matchId: state.matchId,
-    outcome,
-    charId: seat1.charId,
-    stonesPlaced: state.stats[1].placed,
-    skillsUsed: state.stats[1].skills,
+  const saved = ctx.localStore.transaction((draft) => {
+    // ローカルでは P1 のプロフィールだけに報酬を付与し、終了盤面と同時に確定する。
+    const reward = grantMatchReward(draft.profile, {
+      matchId: state.matchId,
+      outcome,
+      charId: seat1.charId,
+      stonesPlaced: state.stats[1].placed,
+      skillsUsed: state.stats[1].skills,
+    });
+    if (!reward.ok) return reward;
+    draft.match = { state, setup };
+    return { ok: true, result: reward.result, outcome };
   });
-  ctx.localStore.setMatch({ state, setup: ctx.localStore.match?.setup || { mode: 'cpu' } });
-  ctx.localStore.save();
+  if (!saved.ok) return saved;
   audio.playSfx(outcome === 'win' ? 'win' : outcome === 'lose' ? 'lose' : 'draw');
-  ctx.app.lastReward = r.result;
-  ctx.refresh();
+  ctx.app.lastReward = saved.result;
+  return saved;
 }
 
 function buildOnlineSession(ctx, match) {
@@ -8764,9 +9214,9 @@ function resultCard(ctx, session) {
       card.appendChild(el('div', { class: 'kv' }, [el('span', { text: '使用キャラXP' }), el('b', { text: `+${rw.charXp}` })]));
     }
     card.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [
-      el('button', { class: 'btn', type: 'button', text: 'もう一度', onclick: () => { ctx.localStore.clearMatch(); resetSelection(false); ctx.refresh(); } }),
-      el('button', { class: 'btn sub', type: 'button', text: 'ガチャへ', onclick: () => { ctx.localStore.clearMatch(); ctx.setView('gacha'); } }),
-      el('button', { class: 'btn sub', type: 'button', text: 'ホームへ', onclick: () => { ctx.localStore.clearMatch(); ctx.setView('home'); } }),
+      el('button', { class: 'btn', type: 'button', text: 'もう一度', onclick: () => leaveLocalResult(ctx, null) }),
+      el('button', { class: 'btn sub', type: 'button', text: 'ガチャへ', onclick: () => leaveLocalResult(ctx, 'gacha') }),
+      el('button', { class: 'btn sub', type: 'button', text: 'ホームへ', onclick: () => leaveLocalResult(ctx, 'home') }),
     ]));
   } else {
     const rewards = st.rewards || [];
@@ -8782,6 +9232,20 @@ function resultCard(ctx, session) {
     ]));
   }
   return card;
+}
+
+function leaveLocalResult(ctx, nextView) {
+  const cleared = ctx.localStore.clearMatch();
+  if (!cleared.ok) {
+    audio.playSfx('error');
+    toast(cleared.message || '対戦結果を保存から削除できませんでした。', 'error');
+    return false;
+  }
+  ctx.app.lastReward = null;
+  resetSelection(false);
+  if (nextView) ctx.setView(nextView);
+  else ctx.refresh();
+  return true;
 }
 
 /* ─────────────────────────── CPU ─────────────────────────── */
@@ -8824,7 +9288,7 @@ function scheduleCpu(ctx, session) {
 
 
 
-return { legalPlacements, renderMatch, resetSelection, getBoardView, clearCpuTimer, renderPlay };
+return { legalPlacements, renderMatch, resetSelection, getBoardView, clearCpuTimer, renderPlay, startLocalMatch, buildLocalSession, finishLocal };
 });
 __def("board.js", function (__req) {
 /**
@@ -9158,11 +9622,19 @@ function renderWardrobe(root, ctx) {
     el('div', { class: 'row' }, [
       el('button', {
         class: 'btn sub small', type: 'button', text: 'このキャラを標準装備に戻す',
-        onclick: async () => { await ctx.api.resetEquip('char', charId); toast('標準装備に戻しました。'); ctx.refresh(); },
+        onclick: async () => {
+          const r = await ctx.api.resetEquip('char', charId);
+          toast(r.ok ? '標準装備に戻しました。' : (r.message || '装備を変更できませんでした。'), r.ok ? 'info' : 'error');
+          ctx.refresh();
+        },
       }),
       el('button', {
         class: 'btn sub small', type: 'button', text: '盤面・碁石を標準に戻す',
-        onclick: async () => { await ctx.api.resetEquip('common'); toast('標準装備に戻しました。'); ctx.refresh(); },
+        onclick: async () => {
+          const r = await ctx.api.resetEquip('common');
+          toast(r.ok ? '標準装備に戻しました。' : (r.message || '装備を変更できませんでした。'), r.ok ? 'info' : 'error');
+          ctx.refresh();
+        },
       }),
     ]),
   ]));
@@ -9267,33 +9739,37 @@ function renderGacha(root, ctx) {
 
 async function doPull(ctx, count) {
   if (ctx.app.gachaBusy) return; // 二重タップ防止
-  const p = ctx.profile();
-  const yes = await confirmDialog({
-    title: `${count}回引きますか`,
-    message: `${count} ペリカを消費します（所持 ${fmt(p.perica)}）。`,
-    confirmLabel: '引く',
-  });
-  if (!yes) return;
   ctx.app.gachaBusy = true;
   ctx.refresh();
-  const r = await ctx.api.gacha(count);
-  ctx.app.gachaBusy = false;
-  if (!r.ok) {
+  try {
+    const p = ctx.profile();
+    const yes = await confirmDialog({
+      title: `${count}回引きますか`,
+      message: `${count} ペリカを消費します（所持 ${fmt(p.perica)}）。`,
+      confirmLabel: '引く',
+    });
+    if (!yes) return;
+    const r = await ctx.api.gacha(count);
+    if (!r.ok) {
+      audio.playSfx('error');
+      toast(r.message || 'ガチャを実行できませんでした。', r.status === 'unknown' ? 'info' : 'error');
+      return;
+    }
+    if (r.processed || !r.result) {
+      toast(r.message || 'この操作はすでに確定済みです。ペリカは二重に消費されていません。');
+      return;
+    }
+    const entries = r.result.entries;
+    ctx.app.gachaResult = r.result;
+    audio.playSfx(entries.some((e) => e.rarity === 'SSR' || e.rarity === 'SR') ? 'gachaRare' : 'gacha');
+    if (r.replay) toast('この操作はすでに確定済みでした。結果を再表示します。');
+  } catch {
     audio.playSfx('error');
-    toast(r.message || 'ガチャを実行できませんでした。', r.status === 'unknown' ? 'info' : 'error');
+    toast('ガチャ処理を完了できませんでした。ペリカは消費されていません。', 'error');
+  } finally {
+    ctx.app.gachaBusy = false;
     ctx.refresh();
-    return;
   }
-  if (r.processed || !r.result) {
-    toast(r.message || 'この操作はすでに確定済みです。ペリカは二重に消費されていません。');
-    ctx.refresh();
-    return;
-  }
-  const entries = r.result.entries;
-  ctx.app.gachaResult = r.result;
-  audio.playSfx(entries.some((e) => e.rarity === 'SSR' || e.rarity === 'SR') ? 'gachaRare' : 'gacha');
-  if (r.replay) toast('この操作はすでに確定済みでした。結果を再表示します。');
-  ctx.refresh();
 }
 
 function resultCard(ctx) {
@@ -9412,15 +9888,26 @@ function rateEditor(ctx) {
           const rates = Object.fromEntries(RARITIES.map((r) => [r, Number(inputs[r].value)]));
           const v = ratesToWeights(rates);
           if (!v.ok) { toast(v.message, 'error'); return; }
-          p.gachaRates = rates;
-          ctx.localStore.save();
-          toast('排出率を更新しました。');
+          const saved = ctx.localStore.transaction((draft) => {
+            draft.profile.gachaRates = rates;
+            draft.profile.updatedAt = Date.now();
+            return { ok: true };
+          });
+          toast(saved.ok ? '排出率を更新しました。' : saved.message, saved.ok ? 'info' : 'error');
           ctx.refresh();
         },
       }),
       el('button', {
         class: 'btn sub small', type: 'button', text: '標準に戻す',
-        onclick: () => { p.gachaRates = null; ctx.localStore.save(); toast('標準の排出率に戻しました。'); ctx.refresh(); },
+        onclick: () => {
+          const saved = ctx.localStore.transaction((draft) => {
+            draft.profile.gachaRates = null;
+            draft.profile.updatedAt = Date.now();
+            return { ok: true };
+          });
+          toast(saved.ok ? '標準の排出率に戻しました。' : saved.message, saved.ok ? 'info' : 'error');
+          ctx.refresh();
+        },
       }),
     ]),
   ]);
@@ -9462,7 +9949,7 @@ function renderOnline(root, ctx) {
           : account ? 'アカウント接続（このページを開ける人どうし）' : '専用サーバー',
       }),
     ]),
-    el('div', { class: 'kv' }, [el('span', { text: '接続状態' }), el('b', { text: status === 'online' ? '接続中' : status === 'connecting' ? '再接続中…' : '未接続' })]),
+    el('div', { class: 'kv' }, [el('span', { text: '接続状態' }), el('b', { text: onlineStatusLabel(status) })]),
     el('p', { class: 'muted', text: 'オンラインの資産（ペリカ・所持・装備）は、この端末のローカル資産とは完全に別に管理されます。ローカルの残高やバックアップをオンラインに持ち込むことはできません。' }),
     world
       ? el('p', { class: 'muted', text: 'ゲストとしてそのまま参加できます。盤面・手番・勝敗・報酬はすべてサーバー側で確定するため、他の人が盤面を書き換えることはできません。' })
@@ -9716,6 +10203,14 @@ function worldErrorMessage(r) {
   }
 }
 
+function onlineStatusLabel(status) {
+  if (status === 'online') return '接続中';
+  if (status === 'connecting') return '再接続中…';
+  if (status === 'auth_error') return '認証エラー';
+  if (status === 'server_error') return 'サーバーエラー';
+  return '未接続';
+}
+
 /** 参加できない部屋の状態と戻り先を日本語で示す */
 function joinErrorMessage(r) {
   switch (r.code) {
@@ -9932,8 +10427,8 @@ function localSaveCard(ctx) {
       onclick: async () => {
         const yes = await confirmDialog({ title: '破損データを破棄しますか', message: '現在の保存データは復元できなくなります。', confirmLabel: '破棄する', danger: true });
         if (!yes) return;
-        ls.discardCorruptAndReset();
-        toast('新しいデータを作成しました。');
+        const saved = ls.discardCorruptAndReset();
+        toast(saved.ok ? '新しいデータを作成しました。' : (saved.message || saveSettingsError(saved.reason)), saved.ok ? 'info' : 'error');
         ctx.refresh();
       },
     }));
@@ -9959,7 +10454,7 @@ function localSaveCard(ctx) {
     });
     if (!yes) return;
     const saved = ls.applyImported(r.profile);
-    toast(saved.ok ? 'バックアップを読み込みました。' : '読み込みましたが保存できませんでした。', saved.ok ? 'info' : 'error');
+    toast(saved.ok ? 'バックアップを読み込みました。' : (saved.message || '保存できなかったため、バックアップは反映していません。'), saved.ok ? 'info' : 'error');
     ctx.refresh();
   });
 
@@ -9983,8 +10478,8 @@ function localSaveCard(ctx) {
       onclick: async () => {
         const yes = await confirmDialog({ title: 'ローカルデータを初期化しますか', message: 'ペリカ・所持・装備・進行中の対戦がすべて消えます。元に戻せません。', confirmLabel: '初期化する', danger: true });
         if (!yes) return;
-        ls.resetAll();
-        toast('初期化しました。');
+        const saved = ls.resetAll();
+        toast(saved.ok ? '初期化しました。' : (saved.message || saveSettingsError(saved.reason)), saved.ok ? 'info' : 'error');
         ctx.refresh();
       },
     }),
@@ -9995,6 +10490,12 @@ function localSaveCard(ctx) {
     card.appendChild(el('div', { class: 'notice', text: `旧バージョンのコイン ${ls.profile.legacyCoins} 枚を退避しています。ペリカへの変換は行いません。` }));
   }
   return card;
+}
+
+function saveSettingsError(reason) {
+  if (reason === 'locked') return '別のタブが保存を使用中のため変更できません。';
+  if (reason === 'quota') return '保存容量が不足しているため変更できません。';
+  return '保存できなかったため変更は反映していません。';
 }
 
 function effectChip(ctx, label, value) {
@@ -10143,7 +10644,11 @@ function renderStory(root, ctx) {
   // 決着済みの盤が残っていて、一覧へ戻ってきたら片付ける
   const held = ctx.localStore.storyMatch;
   if (held && held.state.status !== 'playing' && view.screen === 'map') {
-    ctx.localStore.clearStoryMatch();
+    const cleared = ctx.localStore.clearStoryMatch();
+    if (!cleared.ok) {
+      root.appendChild(el('div', { class: 'notice error', text: cleared.message || '前回の物語盤面を整理できませんでした。' }));
+      return;
+    }
   }
   // 途中の盤があれば、その段の対戦画面へ戻す（再読み込みしても続きから）
   if (view.screen === 'map' && ctx.localStore.storyMatch?.state.status === 'playing') {
@@ -10331,9 +10836,17 @@ function renderDialogue(root, ctx, kind) {
   const seal = kind === 'clear' ? view.lastResult?.seal : null;
   const already = isTalkRead(p, stage.id, kind);
 
-  // 会話を読んだ記録だけ付ける（報酬・解放には影響しない）
-  markTalkRead(p, stage.id, kind);
-  ctx.localStore.save();
+  // 会話を読んだ記録だけ付ける（報酬・解放には影響しない）。
+  // 初回だけ保存し、描画のたびに同じデータを書き直さない。
+  if (!already) {
+    const saved = ctx.localStore.transaction((draft) => {
+      markTalkRead(draft.profile, stage.id, kind);
+      return { ok: true };
+    });
+    if (!saved.ok) {
+      root.appendChild(el('div', { class: 'notice error', text: saved.message || '会話の既読状態を保存できませんでした。' }));
+    }
+  }
 
   const card = el('div', { class: 'card' });
   card.appendChild(sceneBand(stage));
@@ -10378,7 +10891,7 @@ function renderDialogue(root, ctx, kind) {
       STAGE_BY_ID[stage.id + 1] && canEnterStage(ctx.localStore.profile, stage.id + 1).ok
         ? el('button', { class: 'btn', type: 'button', text: '次の段へ', onclick: () => enterStage(ctx, stage.id + 1) })
         : null,
-      el('button', { class: 'btn sub', type: 'button', text: '段の一覧へ', onclick: () => { resetStoryView(); ctx.refresh(); } }),
+      el('button', { class: 'btn sub', type: 'button', text: '段の一覧へ', onclick: () => leaveStoryResult(ctx) }),
     ];
   root.appendChild(el('div', { class: 'card' }, [el('div', { class: 'row' }, buttons.filter(Boolean))]));
 }
@@ -10409,13 +10922,10 @@ function clearRewardCard(ctx, stage) {
       ]),
       el('button', {
         class: 'btn small', type: 'button', text: '装備する',
-        onclick: () => {
-          const res = equipCosmetic(ctx.localStore.profile, {
-            slot: c.slot, id: c.id,
-            charId: ['outfit', 'accessory'].includes(c.slot) ? ctx.localStore.profile.lastCharId : null,
-          });
-          if (res.ok) { ctx.localStore.save(); toast(`${c.name} を装備しました。`); }
-          else toast(res.message || '装備できませんでした。', 'error');
+        onclick: async () => {
+          const charId = ['outfit', 'accessory'].includes(c.slot) ? ctx.localStore.profile.lastCharId : null;
+          const res = await ctx.api.equip(c.slot, c.id, charId);
+          toast(res.ok ? `${c.name} を装備しました。` : (res.message || '装備できませんでした。'), res.ok ? 'info' : 'error');
           ctx.refresh();
         },
       }),
@@ -10492,27 +11002,35 @@ function startStage(ctx, stageId) {
 }
 
 function startMatchNow(ctx, stageId) {
-  const p = ctx.localStore.profile;
   const onlineMatchId = ctx.app.mode === 'ONLINE' ? (ctx.net.view?.match?.matchId || null) : null;
   const matchId = `story_${newRequestId()}`;
-  const begun = beginStoryMatch(p, { stageId, matchId, onlineMatchId });
-  if (!begun.ok) { toast(begun.message, 'error'); return; }
-
-  const state = createStoryMatch({
-    stageId,
-    matchId,
-    playerName: p.name || 'あなた',
-    charId: p.lastCharId,
-    cosmetics: appearanceFor(p, p.lastCharId),
+  const saved = ctx.localStore.transaction((draft) => {
+    const profile = draft.profile;
+    const begun = beginStoryMatch(profile, { stageId, matchId, onlineMatchId });
+    if (!begun.ok) return begun;
+    const state = createStoryMatch({
+      stageId,
+      matchId,
+      playerName: profile.name || 'あなた',
+      charId: profile.lastCharId,
+      cosmetics: appearanceFor(profile, profile.lastCharId),
+    });
+    draft.storyMatch = { state };
+    return { ok: true, state };
   });
+  if (!saved.ok) {
+    audio.playSfx('error');
+    toast(saved.message || '物語の盤面を保存できないため開始できませんでした。', 'error');
+    return false;
+  }
 
   clearCpuTimer();
   fx.reset();
   resetSelection(false);
   view.screen = 'match';
-  ctx.localStore.setStoryMatch({ state });
   audio.setTrack('match');
   ctx.refresh();
+  return true;
 }
 
 function renderStoryMatch(root, ctx) {
@@ -10539,10 +11057,18 @@ function buildStorySession(ctx, rec, stage) {
     async submit(action) {
       const res = applyPlayerAction(rec.state, action);
       if (!res.ok) { audio.playSfx('error'); toast(res.message, 'error'); return false; }
+      const saved = res.state.status === 'finished'
+        ? finishStory(ctx, res.state, stage)
+        : ctx.localStore.setStoryMatch({ state: res.state });
+      if (!saved.ok) {
+        audio.playSfx('error');
+        toast(saved.message || '着手を保存できなかったため、操作前の盤面に戻しました。', 'error');
+        ctx.refresh();
+        return false;
+      }
+      // 保存済みオブジェクトとは別の古い描画クロージャも更新し、再描画前の二重操作を防ぐ。
       rec.state = res.state;
-      ctx.localStore.setStoryMatch({ state: res.state });
       fx.play(res.event, null);
-      if (res.state.status === 'finished') finishStory(ctx, res.state, stage);
       return true;
     },
 
@@ -10551,11 +11077,18 @@ function buildStorySession(ctx, rec, stage) {
       const live = ctx.localStore.storyMatch?.state;
       if (!live || live.status !== 'playing' || live.turn !== ENEMY_SEAT) return;
       const out = runEnemyTurn(live);
+      const saved = out.state.status === 'finished'
+        ? finishStory(ctx, out.state, stage)
+        : ctx.localStore.setStoryMatch({ state: out.state });
+      if (!saved.ok) {
+        audio.playSfx('error');
+        toast(saved.message || '相手の手番を保存できなかったため、操作前の盤面に戻しました。', 'error');
+        return false;
+      }
       rec.state = out.state;
       view.lastEvents = out.events;
-      ctx.localStore.setStoryMatch({ state: out.state });
       for (const ev of out.events) if (ev.type === 'place' || ev.type === 'skill') fx.play(ev, null);
-      if (out.state.status === 'finished') finishStory(ctx, out.state, stage);
+      return true;
     },
 
     async abort() {
@@ -10565,13 +11098,23 @@ function buildStorySession(ctx, rec, stage) {
         confirmLabel: 'やめる', danger: true,
       });
       if (!yes) return;
-      grantStoryClear(ctx.localStore.profile, { stageId: stage.id, outcome: 'aborted' });
-      endStoryMatch(ctx.localStore.profile, rec.state.matchId);
-      ctx.localStore.clearStoryMatch();
-      ctx.localStore.save();
+      const saved = ctx.localStore.transaction((draft) => {
+        const ended = grantStoryClear(draft.profile, { stageId: stage.id, outcome: 'aborted' });
+        if (!ended.ok) return ended;
+        endStoryMatch(draft.profile, rec.state.matchId);
+        draft.storyMatch = null;
+        return { ok: true };
+      });
+      if (!saved.ok) {
+        audio.playSfx('error');
+        toast(saved.message || '中止状態を保存できなかったため、物語は継続しています。', 'error');
+        ctx.refresh();
+        return false;
+      }
       clearCpuTimer();
       resetStoryView();
       ctx.refresh();
+      return true;
     },
 
     renderResult(c) { return storyResultCard(c, rec.state, stage); },
@@ -10673,43 +11216,58 @@ function storyResultCard(ctx, state, stage) {
     }
     card.appendChild(el('p', { class: 'muted', text: '同じ段に何度でも挑めます。2回負けるとヒントを見られます。' }));
     card.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [
-      el('button', { class: 'btn', type: 'button', text: 'もう一度', onclick: () => { ctx.localStore.clearStoryMatch(); startStage(ctx, stage.id); } }),
-      el('button', { class: 'btn sub', type: 'button', text: '段の一覧へ', onclick: () => { ctx.localStore.clearStoryMatch(); resetStoryView(); ctx.refresh(); } }),
+      el('button', { class: 'btn', type: 'button', text: 'もう一度', onclick: () => startStage(ctx, stage.id) }),
+      el('button', { class: 'btn sub', type: 'button', text: '段の一覧へ', onclick: () => leaveStoryResult(ctx) }),
     ]));
   }
   return card;
 }
 
+function leaveStoryResult(ctx) {
+  const cleared = ctx.localStore.clearStoryMatch();
+  if (!cleared.ok) {
+    audio.playSfx('error');
+    toast(cleared.message || '物語の結果を保存から削除できませんでした。', 'error');
+    return false;
+  }
+  resetStoryView();
+  ctx.refresh();
+  return true;
+}
+
 function finishStory(ctx, state, stage) {
   clearCpuTimer();
-  const p = ctx.localStore.profile;
   const out = storyOutcome(state);
   const outcome = out?.outcome || 'lose';
-  const before = new Set(p.story.skills);
-  const r = grantStoryClear(p, {
-    stageId: stage.id,
-    outcome,
-    charId: state.seats[PLAYER_SEAT - 1]?.charId || null,
-    randomInt: hasSecureRandom() ? secureRandomInt : null,
+  const saved = ctx.localStore.transaction((draft) => {
+    const p = draft.profile;
+    const before = new Set(p.story.skills);
+    const reward = grantStoryClear(p, {
+      stageId: stage.id,
+      outcome,
+      charId: state.seats[PLAYER_SEAT - 1]?.charId || null,
+      randomInt: hasSecureRandom() ? secureRandomInt : null,
+    });
+    if (!reward.ok) return reward;
+    const learned = p.story.skills.find((id) => !before.has(id)) || null;
+    endStoryMatch(p, state.matchId);
+    draft.storyMatch = { state };
+    return { ok: true, result: { ...reward.result, skill: learned }, outcome };
   });
-  view.lastResult = r.ok ? r.result : null;
-  if (view.lastResult) {
-    const learned = p.story.skills.find((id) => !before.has(id));
-    view.lastResult.skill = learned || null;
-  }
+  if (!saved.ok) return saved;
+  view.lastResult = saved.result;
   // 連敗数（ヒントの案内にだけ使う）
   if (outcome === 'win') view.losses[stage.id] = 0;
   else view.losses[stage.id] = (view.losses[stage.id] || 0) + 1;
   view.hintLevel = 0;
 
-  endStoryMatch(p, state.matchId);
-  ctx.localStore.save();
   audio.playSfx(outcome === 'win' ? 'win' : 'lose');
+  return saved;
 }
 
 
 
-return { storyViewState: view, STAGES, resetStoryView, renderStory, ambientKindOf };
+return { storyViewState: view, STAGES, resetStoryView, renderStory, ambientKindOf, startMatchNow, buildStorySession, finishStory };
 });
 __def("../../shared/story/engine.js", function (__req) {
 /**
@@ -10862,7 +11420,12 @@ function settleBoard(state) {
 function usedForTelegraph(state, id) {
   const tg = TELEGRAPHS[id];
   const own = state.story.telegraphUses[id] || 0;
-  if (tg.sharesUsesWith) return own + usesOf(state, ENEMY_SEAT, tg.sharesUsesWith);
+  // 旧保存では、技を1つだけ持つ席の skillUses は数値になっている。
+  // そのため、実際に共有先の技を持つ敵だけ通常技の使用分を足す。
+  if (tg.sharesUsesWith
+    && skillsOf(state, ENEMY_SEAT).some((skill) => skill.id === tg.sharesUsesWith)) {
+    return own + usesOf(state, ENEMY_SEAT, tg.sharesUsesWith);
+  }
   return own;
 }
 
@@ -10881,15 +11444,6 @@ function consumeTelegraph(state, id) {
   const tg = TELEGRAPHS[id];
   state.energy[ENEMY_SEAT] = Math.max(0, state.energy[ENEMY_SEAT] - tg.cost);
   state.story.telegraphUses[id] = (state.story.telegraphUses[id] || 0) + 1;
-  // 枠を共有する技は、キャラ側の使用回数にも積む
-  if (tg.sharesUsesWith) {
-    const skill = SKILL_BY_CHARACTER[state.seats[ENEMY_SEAT - 1].charId];
-    if (skill && skill.id === tg.sharesUsesWith) {
-      const u = state.skillUses[ENEMY_SEAT];
-      if (u && typeof u === 'object') u[skill.id] = Number(u[skill.id] || 0) + 1;
-      else state.skillUses[ENEMY_SEAT] = Number(u || 0) + 1;
-    }
-  }
 }
 
 /* ───────────────────────── 予告の解決 ───────────────────────── */
@@ -10901,6 +11455,7 @@ function consumeTelegraph(state, id) {
  */
 function snipeTarget(state, targets) {
   for (const idx of targets) {
+    if (!Number.isInteger(idx) || idx < 0 || idx >= state.stones.length) continue;
     if (state.stones[idx] === PLAYER_SEAT) return idx;
   }
   return null;
@@ -10920,8 +11475,12 @@ function resolveTelegraph(state) {
   }
 
   const tg = TELEGRAPHS[t.id];
-  const targets = t.targets || [];
+  const targets = Array.isArray(t.targets) ? t.targets : [];
   state.story.telegraph = null;
+
+  // 破損した旧保存や手編集データが紛れても、例外や盤外書込を起こさず
+  // この敵手番だけを安全に消費する。未知の技は資源を消費しない。
+  if (!tg) return { resolved: true, outcome: 'invalid', finished: false, event: null };
 
   // 消費は結果によらず必ず行う（防がれても不発でも）
   consumeTelegraph(state, t.id);
@@ -10952,7 +11511,9 @@ function resolveTelegraph(state) {
 
   // 予告占領：予告した地点1つを見る
   const idx = targets[0];
-  if (idx == null) return done('missed', `${tg.name}は的を失った。`, null);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= state.stones.length) {
+    return done('missed', `${tg.name}は的を失った。`, null);
+  }
   if (isFrozen(state, idx)) return done('frozen', `${tg.name}は氷結に阻まれた。`, idx);
   if (state.stones[idx] === ENEMY_SEAT) return done('missed', `${tg.name}はすでに自分の石だった。`, idx);
   if (state.stones[idx] === PLAYER_SEAT) {
