@@ -911,7 +911,9 @@ test('対戦ページはオンライン対戦と練習モードから既存機�
   await withBrowser({ storage, bootable: true }, async (browser) => {
     const requireModule = await loadFreshBundle();
     requireModule('app.js');
-    const { ctx } = browser.window.__triad;
+    const triad = browser.window.__triad;
+    const { ctx } = triad;
+    onlineAccount(triad, { profile: createProfile({ id: 'p_online', name: '旅人' }) });
     ctx.setView('play');
     const root = browser.document.getElementById('view-root');
     const buttonWithHeading = (text) => findNode(root, (node) => (
@@ -1003,14 +1005,20 @@ test('10+1ガチャ結果は11件すべてと11件目のおまけ表示を描画
   await withBrowser({ storage, bootable: true }, async (browser) => {
     const requireModule = await loadFreshBundle();
     requireModule('app.js');
-    const { ctx, localStore } = browser.window.__triad;
+    const triad = browser.window.__triad;
+    const { ctx } = triad;
+    // ガチャはサーバー側の抽選を通る。アカウント接続の実装をそのまま使い、
+    // 書き込み先だけを差し替える。
+    const online = createProfile({ id: 'p_online', name: '旅人' });
+    online.perica = 10;
+    triad.app.onlineKind = 'account';
+    triad.dbNet.ensure = async () => true;
+    triad.dbNet.me = 'p_online';
+    triad.dbNet.profile = online;
+    triad.dbNet.db = { doc: () => ({ async set() {}, async get() { return { exists: false }; }, onSnapshot() { return () => {}; } }) };
+    triad.dbNet._publish();
     const { clear } = requireModule('util.js');
     const { renderGacha } = requireModule('views/gacha.js');
-    const funded = localStore.transaction((draft) => {
-      draft.profile.perica = 10;
-      return { ok: true };
-    });
-    assert.equal(funded.ok, true);
 
     const pulled = await ctx.api.gacha(10);
     assert.equal(pulled.ok, true);
@@ -1053,7 +1061,7 @@ test('接続先が見つかったら、表示する資産はオンラインに�
   });
 });
 
-test('接続先が無ければローカルの資産のまま遊べる', async () => {
+test('接続先が無ければ遊ばせず、端末の保存へ落とさない', async () => {
   await withBrowser({ localOnly: true, bootable: true }, async (browser) => {
     const requireModule = await loadFreshBundle();
     requireModule('app.js');
@@ -1062,18 +1070,31 @@ test('接続先が無ければローカルの資産のまま遊べる', async ()
 
     const { app } = browser.window.__triad;
     assert.equal(app.onlineKind, null);
-    assert.equal(app.mode, 'LOCAL', 'オフラインでも遊べる状態は残す');
+
+    // 正式なデータはすべてアカウント側にあるので、つながるまで画面を進めない（§26・§27・§55）。
+    const root = browser.document.getElementById('view-root');
+    findNode(root, (node) => (
+      node.tagName === 'H2' && /接続できません|インターネット接続が必要です/.test(node.textContent)
+    ), 'オフラインの案内が出る');
+    findButton(root, '再接続');
+    assert.equal(
+      walkNodes(root).some((node) => node.tagName === 'BUTTON' && node.textContent === '物語（1対1）'),
+      false,
+      'ホームの遊ぶ導線は出さない',
+    );
   });
 });
 
-test('オンラインの資産を見ているあいだ、端末に残った対戦を勝手に開かない', async () => {
+test('オンライン対戦が表示されている間は、端末に残った練習盤を開かない', async () => {
   await withBrowser({ localOnly: true, bootable: true }, async (browser) => {
     const requireModule = await loadFreshBundle();
     requireModule('app.js');
     browser.document.dispatchEvent({ type: 'DOMContentLoaded' });
     await flushAsync();
 
-    const { ctx, app, localStore } = browser.window.__triad;
+    const triad = browser.window.__triad;
+    const { ctx, localStore } = triad;
+    onlineAccount(triad, { profile: createProfile({ id: 'p_online', name: '旅人' }) });
     const rules = requireModule('../../shared/rules.js');
     const { CHARACTERS } = requireModule('../../shared/constants.js');
     const seats = CHARACTERS.slice(0, 3).map((c, i) => ({
@@ -1090,13 +1111,22 @@ test('オンラインの資産を見ているあいだ、端末に残った対�
       node.tagName === 'STRONG' && node.textContent === 'オンライン対戦'
     ));
 
-    app.mode = 'ONLINE';
+    // 正式なオンライン対戦が画面にある間は、練習盤へ勝手に移らない
+    triad.dbNet.view = {
+      ...triad.dbNet.view,
+      match: rules.createMatch({ matchId: 'm_online', mode: 'online', seats, startSeat: 1 }),
+    };
     ctx.setView('play');
-    assert.equal(atEntrance(), true, 'オンライン表示中は入口のまま（保存された対戦を開かない）');
+    assert.equal(atEntrance(), false, 'オンライン対戦の盤が出る');
+    assert.equal(
+      walkNodes(browser.document.getElementById('view-root')).some((node) => node.textContent === '練習の対戦です。ペリカ・XP・戦績・ランキングは変わりません。'),
+      false,
+      '練習の盤ではない',
+    );
 
-    app.mode = 'LOCAL';
+    triad.dbNet.view = { ...triad.dbNet.view, match: null };
     ctx.refresh();
-    assert.equal(atEntrance(), false, 'ローカル表示に切り替えたときだけ、保存された対戦を開く');
+    assert.equal(atEntrance(), false, 'オンライン対戦が無くなれば、続きの練習盤へ戻る');
   });
 });
 /** アカウント接続のオンライン表示を作る。物語の通信は記録するだけにする。 */
@@ -1174,5 +1204,59 @@ test('保存先が変わったまま残った物語の盤面は、破棄する�
     await confirmOpenDialog(browser.document);
     await discard;
     assert.equal(localStore.storyMatch, null);
+  });
+});
+
+test('練習の対戦は褒美を出さない（1人で何人分でも操作できるため）', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    const { ctx, localStore } = triad;
+    const online = createProfile({ id: 'p_online', name: '旅人' });
+    onlineAccount(triad, { profile: online });
+    ctx.refresh = () => {};
+
+    const rules = requireModule('../../shared/rules.js');
+    const { CHARACTERS } = requireModule('../../shared/constants.js');
+    const playView = requireModule('views/play.js');
+    const seats = CHARACTERS.slice(0, 3).map((c, i) => ({
+      seat: i + 1, charId: c.id, name: `P${i + 1}`, kind: i === 0 ? 'human' : 'cpu',
+    }));
+    const state = rules.createMatch({ matchId: 'm_practice', mode: 'local', seats, startSeat: 1 });
+    state.stats[1].placed = 5;
+    state.status = 'finished';
+    state.result = { kind: 'win', winner: 1, winners: [1], line: [0, 1, 2, 3, 4], reason: 'five' };
+    assert.equal(localStore.setMatch({ state, setup: { mode: 'cpu' } }).ok, true);
+
+    const beforeOnline = clone(online);
+    const beforeLocal = clone(localStore.profile);
+
+    const saved = playView.finishLocal(ctx, state, { mode: 'cpu' });
+
+    assert.equal(saved.ok, true, '決着そのものは記録される');
+    assert.equal(saved.outcome, 'win');
+    assert.equal(localStore.match.state.status, 'finished', '盤面は端末に残る');
+    assertUnchanged(online, beforeOnline, '練習ではアカウントの資産が動かない');
+    assertUnchanged(localStore.profile, beforeLocal, '端末の資産にも褒美を入れない');
+    assert.equal(triad.app.lastReward, null, '受け取る褒美は無い');
+  });
+});
+
+test('設定画面に LOCAL / ONLINE の切り替えは無い', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    onlineAccount(triad, { profile: createProfile({ id: 'p_online', name: '旅人' }) });
+    triad.ctx.setView('settings');
+
+    const root = browser.document.getElementById('view-root');
+    const labels = walkNodes(root).filter((n) => n.tagName === 'BUTTON').map((n) => n.textContent);
+    assert.equal(labels.some((t) => t.includes('LOCAL')), false, 'LOCAL を選ぶ導線が無い');
+    assert.equal(labels.some((t) => t.includes('ONLINE（サーバー）')), false, '資産の選択自体が無い');
+    findNode(root, (n) => n.tagName === 'H2' && n.textContent === 'アカウント', 'アカウントの札が出る');
   });
 });

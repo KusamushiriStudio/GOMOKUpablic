@@ -601,7 +601,7 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
       <span class="brand-sub">超次元五目</span>
     </div>
     <div class="header-right">
-      <span class="badge" id="mode-badge" data-mode="LOCAL">LOCAL</span>
+      <span class="badge" id="mode-badge" data-mode="ONLINE">ONLINE</span>
       <span class="perica" id="perica-badge" title="ペリカ残高">
         <span class="perica-mark" aria-hidden="true">◎</span><span id="perica-value">0</span>
       </span>
@@ -670,7 +670,8 @@ const { secureRandomInt, hasSecureRandom } = __req("../../shared/rng.js");
 
 const app = {
   view: 'home',
-  mode: 'LOCAL',
+  // 遊べるのはアカウントのデータだけ。端末の保存で進める形はもう無い。
+  mode: 'ONLINE',
   gachaResult: null,
   gachaBusy: false,
   wardrobeChar: null,
@@ -968,11 +969,14 @@ function render() {
     b.setAttribute('aria-current', active ? 'page' : 'false');
   }
 
-  // 保存できない場合の警告
-  if (app.mode === 'LOCAL' && (!localStore.available || !localStore.writable)) {
-    root.appendChild(el('div', { class: 'notice error', text: !localStore.available
-      ? 'この環境では保存が使えません。進行は永続化されていません。'
-      : '別のタブでTRIADが開かれています。このタブでは保存されません。' }));
+  // つながるまでは遊ばせない。端末の保存で代わりに進めることはしない（§26・§27・§55）。
+  const conn = connectionState();
+  if (conn !== 'ready') {
+    renderConnectionGate(root, conn);
+    syncUrl();
+    audio.setAmbient(null);
+    audio.setTrack('home');
+    return;
   }
 
   try {
@@ -996,6 +1000,60 @@ function render() {
         || localStore.match?.state?.status === 'playing');
     audio.setTrack(inMatch ? 'match' : 'home');
   }
+}
+
+/* ───────────────────── 接続の状態 ───────────────────── */
+
+/**
+ * いま遊べる状態か。
+ *
+ * 正式なデータはすべてオンラインにあるので、つながっていない間は
+ * 画面を進めない。端末に残っているものは表示の控えでしかない（§4・§25）。
+ *
+ *  'detecting' … 接続先をさがしている
+ *  'offline'   … 接続先が無い／通信できない
+ *  'loading'   … つながったが、まだ資産を読み込んでいない（§53）
+ *  'ready'     … 遊べる
+ */
+function connectionState() {
+  if (app.onlineKind === 'detecting') return 'detecting';
+  if (!app.onlineKind) return 'offline';
+  if (!activeNet().view?.profile) return 'loading';
+  return 'ready';
+}
+
+/** 接続をやり直す。押した直後から「さがしています」に戻す。 */
+function retryConnect() {
+  if (app.onlineKind === 'detecting') return;
+  app.onlineKind = 'detecting';
+  render();
+  detectOnlineBackend();
+}
+
+/** つながるまでの画面。何を待っているのかと、やり直す手段だけを出す（§52）。 */
+function renderConnectionGate(root, state) {
+  const offline = state === 'offline';
+  const noNetwork = offline && typeof navigator !== 'undefined' && navigator.onLine === false;
+  const title = offline ? (noNetwork ? 'インターネット接続が必要です' : 'オンラインサービスへ接続できません')
+    : state === 'loading' ? 'データを読み込んでいます' : '接続しています';
+  const body = offline
+    ? (noNetwork
+      ? 'TRIAD はアカウントのデータで遊ぶゲームです。通信が戻ってから、もう一度お試しください。'
+      : 'いまオンラインサービスへつながりません。しばらく待ってから、もう一度お試しください。')
+    : state === 'loading'
+      ? 'アカウントのペリカ・所持品・進行を読み込んでいます。'
+      : 'アカウントを確認しています。';
+
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: title }),
+    el('p', { class: 'muted', text: body }),
+    offline
+      ? el('button', { class: 'btn', type: 'button', text: '再接続', onclick: () => retryConnect() })
+      : el('div', { class: 'bar' }, [el('i', { style: 'width:40%' })]),
+    offline
+      ? el('p', { class: 'muted', text: '端末に残っているデータだけで進めることはできません。ペリカ・所持品・戦績はアカウント側が正式な記録です。' })
+      : null,
+  ]));
 }
 
 /** いま物語で鳴らすべき環境音 */
@@ -1088,16 +1146,18 @@ function boot() {
   app.view = route.view;
   app.pendingRoomCode = route.room;
 
+  // 通信が戻ったら、待っている人を自動でつなぎ直す（§26）。
+  window.addEventListener('online', () => { if (!app.onlineKind) retryConnect(); });
+  window.addEventListener('offline', () => render());
+
   render();
   detectOnlineBackend();
 }
 
 /**
- * 接続先が見つかったら、表示する資産をオンライン側に寄せる。
+ * 接続先が見つかったときに、表示する資産をオンライン側に確定させる。
  *
- * app.mode は読み込みのたびに LOCAL から始まる。以前はオンライン系の画面を
- * 開くまで LOCAL のままだったため、オンラインで対戦したあとにホームへ戻ると
- * 端末側の残高が出ていた。接続できる時はオンラインを既定にする。
+ * 資産の置き場所はもうひとつしかないので、ここは念のための確認でしかない。
  */
 function preferOnlineAssets() {
   if (app.mode !== 'ONLINE') app.mode = 'ONLINE';
@@ -8446,7 +8506,7 @@ function renderHome(root, ctx) {
         el('div', { class: 'muted', text: `プレイヤーLv ${lvl}（${prog.into}/${prog.need} XP）` }),
         el('div', { class: 'bar', style: 'margin:6px 0' }, [el('i', { style: `width:${Math.round(prog.ratio * 100)}%` })]),
         el('div', { class: 'muted', text: `所持ペリカ ${fmt(p.perica)}／使用中 ${CHARACTER_BY_ID[charId]?.name || '-'}` }),
-        el('div', { class: 'muted', text: ctx.app.mode === 'ONLINE' ? 'ONLINE の資産を表示中（ローカルとは完全に分離されています）' : 'LOCAL の資産を表示中（この端末内にのみ保存されます）' }),
+        el('div', { class: 'muted', text: 'アカウントの資産を表示中（どの端末から入っても同じ記録です）' }),
       ]),
     ]),
   ]));
@@ -8529,11 +8589,9 @@ function storyCard(ctx) {
       text: totals.clearedStages ? '続きから' : '物語をはじめる',
       onclick: () => ctx.setView('story'),
     }),
-    ctx.app.mode === 'ONLINE'
-      ? el('p', { class: 'muted', text: ctx.storyOnline
-        ? '物語の進行と褒美はオンラインのアカウントに保存されます。'
-        : 'この接続では、物語はこの端末の保存（LOCAL）で進みます。オンラインの資産とは分かれています。' })
-      : null,
+    el('p', { class: 'muted', text: ctx.storyOnline
+      ? '物語の進行と褒美はアカウントに保存されます。'
+      : 'この接続先はまだ物語に対応していません。' }),
   ]);
 }
 
@@ -9061,7 +9119,7 @@ const { evaluatePosition } = __req("../../shared/evaluation.js");
 const { CHARACTERS, CHARACTER_BY_ID, SEAT_COLORS, MAX_ENERGY, DEFAULT_EQUIP } = __req("../../shared/constants.js");
 const { createMatch, applyAction, canUseSkill, skillFirstTargets, skillSecondTargets, mustPass, chooseCpuAction, legalPlacements, errorMessage, labelOf, outcomeForSeat, isWinnerSeat, skillForSeat, skillInRuleset, usableSkills, skillOfId, skillsOf, usesOf, usesCapOf, cloneState, findWinningLine, pickStartSeat, v99Of, v99Info, isFrozen } = __req("../../shared/rules.js");
 const { DEFAULT_PVP_RULESET } = __req("../../shared/rulesets.js");
-const { appearanceFor, grantMatchReward, ownedCharacters } = __req("../../shared/profile.js");
+const { appearanceFor, ownedCharacters } = __req("../../shared/profile.js");
 
 let boardView = null;
 let cpuTimer = null;
@@ -9101,10 +9159,10 @@ function clearCpuTimer() {
 
 function renderPlay(root, ctx) {
   const onlineMatch = ctx.net.view?.match;
-  if (ctx.app.mode === 'ONLINE' && onlineMatch) return renderMatch(root, ctx, buildOnlineSession(ctx, onlineMatch));
-  // オンラインの資産を見ているあいだは、端末に残った対戦を勝手に開かない。
-  // 開いてしまうと、オンライン対戦が終わった直後に画面も残高もローカルへ移る。
-  const local = ctx.app.mode === 'ONLINE' ? null : ctx.localStore.match;
+  if (onlineMatch) return renderMatch(root, ctx, buildOnlineSession(ctx, onlineMatch));
+  // 正式なオンライン対戦が画面にある間は、端末に残った練習盤を開かない。
+  // 開いてしまうと、オンライン対戦の直後に練習の盤へ画面が移ってしまう。
+  const local = ctx.localStore.match;
   if (local && local.state && local.state.status === 'playing') return renderMatch(root, ctx, buildLocalSession(ctx, local));
   if (local && local.state && local.state.status === 'finished') return renderMatch(root, ctx, buildLocalSession(ctx, local));
   return renderSetup(root, ctx);
@@ -9132,7 +9190,7 @@ function renderSetup(root, ctx) {
         ]),
         el('button', {
           class: 'btn mode-choice', type: 'button',
-          onclick: () => { ctx.app.mode = 'LOCAL'; setupScreen = 'practice'; ctx.refresh(); },
+          onclick: () => { setupScreen = 'practice'; ctx.refresh(); },
         }, [
           el('strong', { text: '練習モード' }),
           el('span', { text: 'CPUまたは同じ端末で練習' }),
@@ -9169,7 +9227,8 @@ function renderSetup(root, ctx) {
     return;
   }
 
-  const profile = ctx.localStore.profile;
+  // 練習でも見た目と使えるキャラはアカウントのものを使う（§11）。
+  const profile = ctx.profile();
   const owned = ownedCharacters(profile);
   if (!owned.some((c) => c.id === setupDraft.chars[0])) setupDraft.chars[0] = owned[0].id;
 
@@ -9227,7 +9286,7 @@ function charPickCard(c, pressed, onclick, profile) {
 }
 
 function startLocalMatch(ctx) {
-  const profile = ctx.localStore.profile;
+  const profile = ctx.profile();
   const seats = [1, 2, 3].map((seat) => ({
     seat,
     name: setupDraft.mode === 'cpu' && seat > 1 ? `CPU ${seat}` : `P${seat}`,
@@ -9260,7 +9319,7 @@ function startLocalMatch(ctx) {
 /* ─────────────────────────── セッション抽象 ─────────────────────────── */
 
 function buildLocalSession(ctx, local) {
-  const profile = ctx.localStore.profile;
+  const profile = ctx.profile();
   return {
     kind: 'local',
     state: local.state,
@@ -9308,27 +9367,21 @@ function buildLocalSession(ctx, local) {
   };
 }
 
+/**
+ * 練習対戦の決着。
+ *
+ * 練習（コンピュータ対戦・同一端末対戦）では褒美を渡さない（§14・§15）。
+ * 1人で何人分でも操作できるため、ここで通貨や経験値が増えると、難度を下げて
+ * 回すだけでいくらでも稼げてしまう。盤面だけを端末に残し、資産には触れない。
+ */
 function finishLocal(ctx, state, setup = ctx.localStore.match?.setup || { mode: 'cpu' }) {
   clearCpuTimer();
-  const seat1 = state.seats.find((s) => s.seat === 1);
   const outcome = outcomeForSeat(state.result, 1);
-  const saved = ctx.localStore.transaction((draft) => {
-    // ローカルでは P1 のプロフィールだけに報酬を付与し、終了盤面と同時に確定する。
-    const reward = grantMatchReward(draft.profile, {
-      matchId: state.matchId,
-      outcome,
-      charId: seat1.charId,
-      stonesPlaced: state.stats[1].placed,
-      skillsUsed: state.stats[1].skills,
-    });
-    if (!reward.ok) return reward;
-    draft.match = { state, setup };
-    return { ok: true, result: reward.result, outcome };
-  });
+  const saved = ctx.localStore.setMatch({ state, setup });
   if (!saved.ok) return saved;
   audio.playSfx(outcome === 'win' ? 'win' : outcome === 'lose' ? 'lose' : 'draw');
-  ctx.app.lastReward = saved.result;
-  return saved;
+  ctx.app.lastReward = null;
+  return { ok: true, outcome };
 }
 
 function buildOnlineSession(ctx, match) {
@@ -9805,13 +9858,7 @@ function resultCard(ctx, session) {
   }
 
   if (session.kind === 'local') {
-    const rw = ctx.app.lastReward;
-    card.appendChild(el('div', { class: 'muted', text: 'ローカル対戦の報酬は P1 のプロフィールにだけ入ります。' }));
-    if (rw) {
-      card.appendChild(el('div', { class: 'kv' }, [el('span', { text: 'ペリカ' }), el('b', { text: `+${rw.perica}` })]));
-      card.appendChild(el('div', { class: 'kv' }, [el('span', { text: 'プレイヤーXP' }), el('b', { text: `+${rw.playerXp}` })]));
-      card.appendChild(el('div', { class: 'kv' }, [el('span', { text: '使用キャラXP' }), el('b', { text: `+${rw.charXp}` })]));
-    }
+    card.appendChild(el('div', { class: 'muted', text: '練習の対戦です。ペリカ・XP・戦績・ランキングは変わりません。' }));
     card.appendChild(el('div', { class: 'row', style: 'margin-top:10px' }, [
       el('button', { class: 'btn', type: 'button', text: 'もう一度', onclick: () => leaveLocalResult(ctx, null) }),
       el('button', { class: 'btn sub', type: 'button', text: 'ガチャへ', onclick: () => leaveLocalResult(ctx, 'gacha') }),
@@ -10297,13 +10344,12 @@ function line(label, value) {
 return { fmt, renderChars, renderWardrobe };
 });
 __def("views/gacha.js", function (__req) {
-/** ガチャ / 結果 / 提供割合 / 履歴 / ローカル試作用の排出率編集 */
+/** ガチャ / 結果 / 提供割合 / 履歴 */
 
 const { el, fmt, pct, toast, confirmDialog, dateLabel } = __req("util.js");
 const { cosmeticThumb, characterSvg } = __req("art.js");
 const { audio } = __req("audio.js");
 const { RARITIES, GACHA_POOL, GACHA_POOL_BY_RARITY, COSMETIC_BY_ID, CHARACTER_BY_ID, SLOT_LABEL, GACHA_HISTORY_LIMIT, parseDrawId } = __req("../../shared/constants.js");
-const { defaultRatesPercent, ratesToWeights } = __req("../../shared/gacha.js");
 const { currentOfferRates } = __req("../../shared/profile.js");
 
 function renderGacha(root, ctx) {
@@ -10333,7 +10379,6 @@ function renderGacha(root, ctx) {
 
   root.appendChild(ratesCard(rates));
   root.appendChild(historyCard(p));
-  if (ctx.app.mode === 'LOCAL') root.appendChild(rateEditor(ctx));
 }
 
 async function doPull(ctx, count) {
@@ -10469,51 +10514,6 @@ function historyCard(p) {
   ]);
 }
 
-/* ── ローカル試作用の排出率編集 ── */
-function rateEditor(ctx) {
-  const p = ctx.profile();
-  const cur = p.gachaRates || defaultRatesPercent();
-  const inputs = {};
-  const box = el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: '排出率の編集（ローカル試作用）' }),
-    el('p', { class: 'muted', text: '0〜100%、小数第2位まで、合計100%。オンラインの一般ユーザーはこの設定を変更できません。' }),
-    ...RARITIES.map((r) => {
-      const input = el('input', { type: 'number', min: '0', max: '100', step: '0.01', value: String(Number(cur[r]).toFixed(2)) });
-      inputs[r] = input;
-      return el('label', { class: 'field' }, [el('span', { text: `${r} の確率（%）` }), input]);
-    }),
-    el('div', { class: 'row' }, [
-      el('button', {
-        class: 'btn small', type: 'button', text: '適用する',
-        onclick: () => {
-          const rates = Object.fromEntries(RARITIES.map((r) => [r, Number(inputs[r].value)]));
-          const v = ratesToWeights(rates);
-          if (!v.ok) { toast(v.message, 'error'); return; }
-          const saved = ctx.localStore.transaction((draft) => {
-            draft.profile.gachaRates = rates;
-            draft.profile.updatedAt = Date.now();
-            return { ok: true };
-          });
-          toast(saved.ok ? '排出率を更新しました。' : saved.message, saved.ok ? 'info' : 'error');
-          ctx.refresh();
-        },
-      }),
-      el('button', {
-        class: 'btn sub small', type: 'button', text: '標準に戻す',
-        onclick: () => {
-          const saved = ctx.localStore.transaction((draft) => {
-            draft.profile.gachaRates = null;
-            draft.profile.updatedAt = Date.now();
-            return { ok: true };
-          });
-          toast(saved.ok ? '標準の排出率に戻しました。' : saved.message, saved.ok ? 'info' : 'error');
-          ctx.refresh();
-        },
-      }),
-    ]),
-  ]);
-  return box;
-}
 
 
 
@@ -11614,27 +11614,37 @@ const { preferences } = __req("preferences.js");
 const { effectLevel, setEffectLevel } = __req("util.js");
 const { DEFAULT_AUDIO } = __req("../../shared/constants.js");
 
+/** 接続先の呼び名。どこへ保存されているのかを一言で示す。 */
+const BACKEND_LABEL = {
+  supabase: 'オンライン（世界対戦サーバー）',
+  server: 'オンライン（自前サーバー）',
+  account: 'オンライン（アカウント接続）',
+};
+
+/**
+ * アカウントの札。
+ *
+ * 遊ぶ場所を選ばせる画面ではない。TRIAD はアカウントのデータだけで動くので、
+ * ここでは「いまどこへ保存されているか」と「この端末を失うとどうなるか」を伝える。
+ */
+function accountCard(ctx) {
+  const p = ctx.profile();
+  return el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: 'アカウント' }),
+    el('div', { class: 'kv' }, [
+      el('span', { text: '保存先' }),
+      el('b', { text: BACKEND_LABEL[ctx.onlineKind] || 'オンライン' }),
+    ]),
+    el('div', { class: 'kv' }, [el('span', { text: '表示名' }), el('b', { text: p?.name || '旅人' })]),
+    el('p', { class: 'muted', text: 'ペリカ・所持品・着せ替え・物語の進行・戦績はアカウントに保存されます。別の端末から同じアカウントで入れば、同じ続きから遊べます。' }),
+    el('p', { class: 'muted', text: 'いまはゲストとして遊んでいます。ブラウザのデータを消すとこのアカウントへ戻れなくなることがあります。連携（Apple・Google・メール）は準備中です。' }),
+  ]);
+}
+
 function renderSettings(root, ctx) {
   const s = audio.settings;
 
-  root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: '表示中の資産' }),
-    el('div', { class: 'chips' }, [
-      el('button', {
-        class: 'chip', type: 'button', text: 'LOCAL（この端末）', 'aria-pressed': ctx.app.mode === 'LOCAL' ? 'true' : 'false',
-        onclick: () => { ctx.app.mode = 'LOCAL'; ctx.refresh(); },
-      }),
-      el('button', {
-        class: 'chip', type: 'button', text: 'ONLINE（サーバー）',
-        'aria-pressed': ctx.app.mode === 'ONLINE' ? 'true' : 'false',
-        disabled: ctx.localOnly,
-        onclick: () => { ctx.enterOnline(); ctx.refresh(); },
-      }),
-    ]),
-    el('p', { class: 'muted', text: 'ローカルとオンラインの資産は完全に分離されています。ローカルの残高・バックアップをオンラインへ持ち込むことはできません。' }),
-    ctx.localOnly ? el('div', { class: 'notice', text: 'この環境ではオンライン対戦の接続先が見つかりませんでした。ONLINE は選べません。' }) : null,
-    ctx.onlineKind === 'account' ? el('div', { class: 'notice', text: 'ONLINE はアカウント接続です。このページを開けるアカウントどうしで対戦でき、資産は共有データに保存されます。' }) : null,
-  ]));
+  root.appendChild(accountCard(ctx));
 
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: '着手前確認' }),
@@ -12049,9 +12059,8 @@ function holdBoard(ctx, state) {
 /** 保存先を1行で示す（資産が混ざらないことを明示する） */
 function saveLabel(ctx) {
   if (backendOf(ctx) === 'server') return '物語はサーバーで進みます。盤面も褒美もアカウントに残るので、別の端末でも続きから遊べます。';
-  if (ctx.storyOnline) return '進行と褒美はオンラインのアカウントに保存されます（進行中の盤面はこの端末に残ります）。';
-  if (ctx.app.mode === 'ONLINE') return 'この接続では、物語はこの端末の保存（LOCAL）で進みます。オンラインの資産とは分かれています。';
-  return '進行はこの端末の保存（LOCAL）に残ります。';
+  if (ctx.storyOnline) return '進行と褒美はアカウントに保存されます（進行中の盤面はこの端末に残ります）。';
+  return 'この接続先はまだ物語に対応していません。';
 }
 
 /** 保存先が変わったまま盤が残っているときの案内。破棄するまで先へ進めない。 */
