@@ -528,7 +528,7 @@ __def("../../shared/profile.js", function (__req) {
  * ローカル(localStorage) とサーバー(JSON) の双方で同じ関数を使う。
  */
 
-const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, GACHA_HISTORY_LIMIT, SAVE_VERSION, parseDrawId } = __req("../../shared/constants.js");
+const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, GACHA_HISTORY_LIMIT, SAVE_VERSION, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, parseDrawId } = __req("../../shared/constants.js");
 const { drawMany, defaultWeights, ratesToWeights, weightsToRates, offerRates } = __req("../../shared/gacha.js");
 const { STAGE_BY_ID, STORY_STAGE_COUNT, STORY_TOTAL_PERICA, SKILL_UNLOCKS, SKILL_UNLOCK_BY_STAGE, SEAL_BY_STAGE, STAGE_REWARD, STORY_XP, DUPLICATE_DROP_XP } = __req("../../shared/story/stages.js");
 
@@ -570,9 +570,52 @@ function createProfile(opts = {}) {
     rewardedMatches: {},
     legacyCoins: null, // 旧コインは退避のみ。ペリカへ変換しない。
     story: createStoryArea(),
+    settings: createSettingsArea(),
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/**
+ * 端末をまたいで持ち歩く操作まわりの設定（統合仕様書 §24）。
+ *
+ * 音量や着手前確認は「その人の遊び方」なので、端末ごとに設定し直さなくて済む
+ * ようにアカウントへ置く。端末側にも控えを残すが、正しいのはこちら。
+ */
+function createSettingsArea() {
+  return {
+    confirmMove: true,
+    bgm: DEFAULT_AUDIO.bgm,
+    sfx: DEFAULT_AUDIO.sfx,
+    ambient: DEFAULT_AUDIO.ambient,
+    muted: DEFAULT_AUDIO.muted,
+    effectLevel: DEFAULT_EFFECT_LEVEL,
+  };
+}
+
+const clamp01 = (v, fallback) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(1, Math.max(0, n));
+};
+
+/**
+ * 設定の書き換え。知らない項目と範囲外の値は捨てる。
+ * @param {object} patch 変更したい項目だけを持つ
+ */
+function applySettings(profile, patch) {
+  if (!patch || typeof patch !== 'object') return { ok: false, code: 'bad_settings', message: '設定の形式が不正です。' };
+  const base = profile.settings || createSettingsArea();
+  const next = { ...createSettingsArea(), ...base };
+  if ('confirmMove' in patch) next.confirmMove = !!patch.confirmMove;
+  if ('muted' in patch) next.muted = !!patch.muted;
+  for (const key of ['bgm', 'sfx', 'ambient']) {
+    if (key in patch) next[key] = clamp01(patch[key], next[key]);
+  }
+  if ('effectLevel' in patch && EFFECT_LEVELS.includes(patch.effectLevel)) next.effectLevel = patch.effectLevel;
+  profile.settings = next;
+  profile.updatedAt = Date.now();
+  return { ok: true, result: { settings: { ...next } } };
 }
 
 /**
@@ -754,6 +797,9 @@ function normalizeProfile(raw) {
     const v = ratesToWeights(raw.gachaRates);
     if (v.ok) base.gachaRates = { ...raw.gachaRates };
   }
+
+  // ── 端末をまたぐ設定。無い保存は既定値のまま。
+  if (raw.settings && typeof raw.settings === 'object') applySettings(base, raw.settings);
 
   // ── 物語（V3 → V4 の移行）
   // V3 までの保存には story が無い。既定値を入れるだけで、
@@ -1374,7 +1420,7 @@ function summarize(profile) {
   };
 }
 
-return { createProfile, createStoryArea, normalizeProfile, playerLevel, charLevel, playerLevelProgress, charLevelProgress, ownedCharacters, ownsCharacter, ownsCosmetic, ownedCosmetics, equipCosmetic, resetEquipToDefault, appearanceFor, bodyHash, LEDGER_ERR_CONFLICT, ledgerLookup, ledgerRecord, pruneLedger, effectiveWeights, currentOfferRates, pullGacha, trainCharacter, grantMatchReward, canEnterStage, beginStoryMatch, endStoryMatch, grantStoryClear, storyTotals, markTalkRead, isTalkRead, missionProgress, claimMission, summarize };
+return { createProfile, createStoryArea, createSettingsArea, applySettings, normalizeProfile, playerLevel, charLevel, playerLevelProgress, charLevelProgress, ownedCharacters, ownsCharacter, ownsCosmetic, ownedCosmetics, equipCosmetic, resetEquipToDefault, appearanceFor, bodyHash, LEDGER_ERR_CONFLICT, ledgerLookup, ledgerRecord, pruneLedger, effectiveWeights, currentOfferRates, pullGacha, trainCharacter, grantMatchReward, canEnterStage, beginStoryMatch, endStoryMatch, grantStoryClear, storyTotals, markTalkRead, isTalkRead, missionProgress, claimMission, summarize };
 });
 
 __def("../../shared/rules.js", function (__req) {

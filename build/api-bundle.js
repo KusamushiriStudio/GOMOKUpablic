@@ -406,7 +406,7 @@ __def("../../shared/gacha.js", function(__req2) {
   return { defaultWeights, defaultRatesPercent, ratesToWeights, weightsToRates, offerRates, drawOne, drawMany };
 });
 __def("../../shared/profile.js", function(__req2) {
-  const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, GACHA_HISTORY_LIMIT, SAVE_VERSION, parseDrawId } = __req2("../../shared/constants.js");
+  const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, GACHA_HISTORY_LIMIT, SAVE_VERSION, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, parseDrawId } = __req2("../../shared/constants.js");
   const { drawMany, defaultWeights, ratesToWeights, weightsToRates, offerRates } = __req2("../../shared/gacha.js");
   const { STAGE_BY_ID, STORY_STAGE_COUNT, STORY_TOTAL_PERICA, SKILL_UNLOCKS, SKILL_UNLOCK_BY_STAGE, SEAL_BY_STAGE, STAGE_REWARD, STORY_XP, DUPLICATE_DROP_XP } = __req2("../../shared/story/stages.js");
   function createProfile(opts = {}) {
@@ -451,9 +451,39 @@ __def("../../shared/profile.js", function(__req2) {
       legacyCoins: null,
       // 旧コインは退避のみ。ペリカへ変換しない。
       story: createStoryArea(),
+      settings: createSettingsArea(),
       createdAt: now,
       updatedAt: now
     };
+  }
+  function createSettingsArea() {
+    return {
+      confirmMove: true,
+      bgm: DEFAULT_AUDIO.bgm,
+      sfx: DEFAULT_AUDIO.sfx,
+      ambient: DEFAULT_AUDIO.ambient,
+      muted: DEFAULT_AUDIO.muted,
+      effectLevel: DEFAULT_EFFECT_LEVEL
+    };
+  }
+  const clamp01 = (v, fallback) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(1, Math.max(0, n));
+  };
+  function applySettings(profile2, patch) {
+    if (!patch || typeof patch !== "object") return { ok: false, code: "bad_settings", message: "\u8A2D\u5B9A\u306E\u5F62\u5F0F\u304C\u4E0D\u6B63\u3067\u3059\u3002" };
+    const base = profile2.settings || createSettingsArea();
+    const next = { ...createSettingsArea(), ...base };
+    if ("confirmMove" in patch) next.confirmMove = !!patch.confirmMove;
+    if ("muted" in patch) next.muted = !!patch.muted;
+    for (const key of ["bgm", "sfx", "ambient"]) {
+      if (key in patch) next[key] = clamp01(patch[key], next[key]);
+    }
+    if ("effectLevel" in patch && EFFECT_LEVELS.includes(patch.effectLevel)) next.effectLevel = patch.effectLevel;
+    profile2.settings = next;
+    profile2.updatedAt = Date.now();
+    return { ok: true, result: { settings: { ...next } } };
   }
   function createStoryArea() {
     return {
@@ -601,6 +631,7 @@ __def("../../shared/profile.js", function(__req2) {
       const v = ratesToWeights(raw.gachaRates);
       if (v.ok) base.gachaRates = { ...raw.gachaRates };
     }
+    if (raw.settings && typeof raw.settings === "object") applySettings(base, raw.settings);
     base.story = migrateStory(raw.story, base);
     base.updatedAt = Date.now();
     return base;
@@ -1123,7 +1154,7 @@ __def("../../shared/profile.js", function(__req2) {
       equipCommon: { ...profile2.equipCommon }
     };
   }
-  return { createProfile, createStoryArea, normalizeProfile, playerLevel, charLevel, playerLevelProgress, charLevelProgress, ownedCharacters, ownsCharacter, ownsCosmetic, ownedCosmetics, equipCosmetic, resetEquipToDefault, appearanceFor, bodyHash, LEDGER_ERR_CONFLICT, ledgerLookup, ledgerRecord, pruneLedger, effectiveWeights, currentOfferRates, pullGacha, trainCharacter, grantMatchReward, canEnterStage, beginStoryMatch, endStoryMatch, grantStoryClear, storyTotals, markTalkRead, isTalkRead, missionProgress, claimMission, summarize };
+  return { createProfile, createStoryArea, createSettingsArea, applySettings, normalizeProfile, playerLevel, charLevel, playerLevelProgress, charLevelProgress, ownedCharacters, ownsCharacter, ownsCosmetic, ownedCosmetics, equipCosmetic, resetEquipToDefault, appearanceFor, bodyHash, LEDGER_ERR_CONFLICT, ledgerLookup, ledgerRecord, pruneLedger, effectiveWeights, currentOfferRates, pullGacha, trainCharacter, grantMatchReward, canEnterStage, beginStoryMatch, endStoryMatch, grantStoryClear, storyTotals, markTalkRead, isTalkRead, missionProgress, claimMission, summarize };
 });
 __def("../../shared/rules.js", function(__req2) {
   const { BOARD_W, BOARD_H, BOARD_SIZE, WIN_LENGTH, MAX_ENERGY, NEIGHBOR_DIRS, LINE_DIRS, SEATS, COLUMN_LABELS, CHARACTER_BY_ID, SKILL_BY_CHARACTER, SKILL_BY_ID, indexToLabel } = __req2("../../shared/constants.js");

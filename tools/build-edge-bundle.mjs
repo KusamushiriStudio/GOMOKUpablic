@@ -13,6 +13,10 @@ import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const out = resolve(root, 'build/api-bundle.js');
 
+// game-core.js は index.html から生成する。ここで作り直しておかないと、
+// 共有ロジックに足した関数が入らないまま束ねてしまう（実際に一度そうなった）。
+execFileSync(process.execPath, [resolve(root, 'tools/extract-edge-core.mjs')], { stdio: 'inherit' });
+
 execFileSync('npx', [
   '--yes', 'esbuild@0.24.0',
   resolve(root, 'supabase/functions/api/index.ts'),
