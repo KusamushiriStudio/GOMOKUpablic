@@ -385,3 +385,70 @@ test('an HTTP 500 is exposed as server_error instead of online', async () => {
 
   assert.equal(client.status, 'server_error');
 });
+
+/** メールつきの鍵。is_anonymous が落ちた状態を作る。 */
+function jwtWithEmail(sub, email) {
+  const payload = Buffer.from(JSON.stringify({ sub, email, is_anonymous: false })).toString('base64url');
+  return `header.${payload}.signature`;
+}
+
+test('メール連携は同じユーザーIDのまま行い、資産を作り直さない', async () => {
+  const calls = [];
+  const { client } = makeClient(async (url, init) => {
+    calls.push({ url: String(url), method: init?.method, body: JSON.parse(init?.body || '{}') });
+    return {
+      ok: true, status: 200,
+      json: async () => ({ id: 'user-1', email: 'me@example.test', email_confirmed_at: null }),
+    };
+  });
+
+  const r = await client.linkEmail({ email: 'me@example.test', password: 'hunter22' });
+
+  assert.equal(r.ok, true);
+  assert.equal(r.confirm, true, '確認メールが要る設定では confirm を立てる');
+  const put = calls.find((c) => c.url.endsWith('/auth/v1/user'));
+  assert.ok(put, 'いまの鍵のままユーザーを更新する（新規作成ではない）');
+  assert.equal(put.method, 'PUT');
+  assert.equal(put.body.email, 'me@example.test');
+  assert.equal(client.session.access_token, OLD_TOKEN, '鍵は差し替えない');
+});
+
+test('メール連携の断りは、そのまま読める文で返す', async () => {
+  const { client } = makeClient(async () => ({
+    ok: false, status: 422,
+    json: async () => ({ error_code: 'email_exists', msg: 'Email address already registered' }),
+  }));
+
+  const r = await client.linkEmail({ email: 'taken@example.test', password: 'hunter22' });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'email_exists');
+  assert.match(r.message, /すでに別のアカウント/);
+});
+
+test('連携済みのアカウントで入り直すと、鍵が差し替わり表示も作り直す', async () => {
+  const { client } = makeClient(async (url) => {
+    if (String(url).includes('grant_type=password')) {
+      return {
+        ok: true, status: 200,
+        json: async () => ({ access_token: NEW_TOKEN, refresh_token: 'refresh-new', expires_at: FUTURE_EXPIRY }),
+      };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  });
+  client.view = { profile: { perica: 999 } };
+
+  const r = await client.signInWithEmail({ email: 'me@example.test', password: 'hunter22' });
+
+  assert.equal(r.ok, true);
+  assert.equal(client.session.access_token, NEW_TOKEN);
+  assert.equal(client.view, null, '前のアカウントの表示は持ち越さない');
+});
+
+test('連携済みかどうかは鍵の中身だけで判断する', () => {
+  const { client } = makeClient(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+  assert.equal(client.accountEmail, null, '匿名の鍵ではメールを名乗らない');
+
+  client.session = { access_token: jwtWithEmail('user-1', 'me@example.test'), expires_at: FUTURE_EXPIRY };
+  assert.equal(client.accountEmail, 'me@example.test');
+});

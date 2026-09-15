@@ -648,7 +648,7 @@ __def("app.js", function (__req) {
  * TRIAD — アプリ本体（ルーティング・ヘッダー・ローカル/オンラインの振り分け）
  */
 
-const { el, clear, toast, fmt, newRequestId, shareLink, inAppBrowser, setEffectLevel } = __req("util.js");
+const { el, clear, toast, fmt, newRequestId, shareLink, inAppBrowser, setEffectLevel, effectLevel } = __req("util.js");
 const { audio } = __req("audio.js");
 const { preferences } = __req("preferences.js");
 const { fx } = __req("fx.js");
@@ -824,6 +824,13 @@ const ctx = {
   get storyLoading() { return ctx.storyOnline && !activeNet().view?.profile; },
   /** オンライン対戦の手段がまったく無い状態 */
   get localOnly() { return app.onlineKind === null; },
+  /**
+   * 正式な褒美を持つ進行がいま1つあるか（§32・§33）。
+   * 'ONLINE_MATCH' / 'STORY' / 'NONE'。練習はここに出ない（褒美が無いため）。
+   */
+  get activeSession() { return activeNet().view?.activeSession || 'NONE'; },
+  /** 連携済みのメールアドレス。ゲストのままなら null（§45）。 */
+  get accountEmail() { return activeNet().accountEmail || null; },
   enterOnline() {
     if (!app.onlineKind || app.onlineKind === 'detecting') return;
     if (app.mode !== 'ONLINE') app.mode = 'ONLINE';
@@ -936,6 +943,33 @@ const ctx = {
      * 端末の保存へは戻さない。出たあとは接続の画面に戻り、
      * つなぎ直すと新しいゲストとして始まる。
      */
+    /**
+     * いまのゲストにメールを結び付ける（§45）。
+     * 資産は移し替えではなく、同じアカウントのまま引き継がれる。
+     */
+    async linkEmail(email, password) {
+      const n = activeNet();
+      if (typeof n.linkEmail !== 'function') {
+        return { ok: false, message: 'この接続先では連携できません。' };
+      }
+      const r = await n.linkEmail({ email, password });
+      if (r.ok) { n.connect(); render(); }
+      return r;
+    },
+    /** 連携済みのアカウントで入り直す。いまのゲストの鍵は捨てる。 */
+    async signInWithEmail(email, password) {
+      const n = activeNet();
+      if (typeof n.signInWithEmail !== 'function') {
+        return { ok: false, message: 'この接続先ではログインできません。' };
+      }
+      const r = await n.signInWithEmail({ email, password });
+      if (!r.ok) return r;
+      settingsApplied = false;
+      app.view = 'home';
+      n.connect();
+      render();
+      return r;
+    },
     async signOut() {
       const n = activeNet();
       if (typeof n.signOut !== 'function') {
@@ -1131,6 +1165,19 @@ function applyAccountSettings() {
   const s = activeNet().view?.profile?.settings;
   if (!s) return;
   settingsApplied = true;
+  // アカウントへ一度も保存していないなら、端末に残っている設定のほうが
+  // その人の好みに近い。上書きせず、そちらを持ち上げる（初回だけ）。
+  if (!s.savedAt) {
+    ctx.api.settings({
+      confirmMove: preferences.values.confirmMove,
+      bgm: audio.settings.bgm,
+      sfx: audio.settings.sfx,
+      ambient: audio.settings.ambient,
+      muted: audio.settings.muted,
+      effectLevel: effectLevel(),
+    });
+    return;
+  }
   audio.setSettings({ bgm: s.bgm, sfx: s.sfx, ambient: s.ambient, muted: s.muted });
   preferences.set({ confirmMove: s.confirmMove });
   setEffectLevel(s.effectLevel);
@@ -3388,6 +3435,14 @@ function createSettingsArea() {
     ambient: DEFAULT_AUDIO.ambient,
     muted: DEFAULT_AUDIO.muted,
     effectLevel: DEFAULT_EFFECT_LEVEL,
+    /**
+     * 一度でもアカウントへ設定を保存したか。
+     *
+     * null のうちは「既定値が入っているだけ」なので、端末に残っている設定を
+     * 上書きせず、逆にそれを持ち上げる（オンライン化前からの利用者の音量を
+     * 初回だけ引き継ぐため）。
+     */
+    savedAt: null,
   };
 }
 
@@ -3411,6 +3466,7 @@ function applySettings(profile, patch) {
     if (key in patch) next[key] = clamp01(patch[key], next[key]);
   }
   if ('effectLevel' in patch && EFFECT_LEVELS.includes(patch.effectLevel)) next.effectLevel = patch.effectLevel;
+  next.savedAt = Date.now();
   profile.settings = next;
   profile.updatedAt = Date.now();
   return { ok: true, result: { settings: { ...next } } };
@@ -8080,6 +8136,21 @@ const POLL_MATCH = 1200;
 const POLL_QUEUE = 1500;
 const POLL_IDLE = 8000;
 
+/** Supabase の断り文句を、そのまま出しても通じる日本語にする。 */
+function authMessage(data) {
+  const code = data?.error_code || '';
+  const known = {
+    email_exists: 'そのメールアドレスは、すでに別のアカウントで使われています。',
+    email_address_invalid: 'メールアドレスの形式が正しくありません。',
+    weak_password: 'パスワードが短すぎます。もう少し長いものにしてください。',
+    invalid_credentials: 'メールアドレスかパスワードが違います。',
+    over_email_send_rate_limit: '確認メールの送信が続きました。しばらく待ってからお試しください。',
+    email_provider_disabled: 'この環境ではメールでの連携が有効になっていません。',
+    signup_disabled: 'この環境ではメールでの連携が有効になっていません。',
+  };
+  return known[code] || data?.msg || data?.message || '処理できませんでした。';
+}
+
 function readConfig() {
   const c = (typeof window !== 'undefined' && window.__TRIAD_SUPABASE__) || null;
   if (!c || !c.url || !c.anonKey) return null;
@@ -8304,6 +8375,53 @@ class SupaNet {
     if (this._timer) { clearTimeout(this._timer); this._timer = null; }
     this._closeSocket();
     this._setStatus('offline');
+  }
+
+  /**
+   * いまのゲストにメールアドレスを結び付ける（§45）。
+   *
+   * ユーザーIDは変わらないので、ペリカ・所持品・物語の進行・戦績・フレンドは
+   * そのまま残る。新しいアカウントを作って移し替えるのではない、という点が大事。
+   * プロジェクトの設定によっては確認メールが要る（その場合 confirm が真で返る）。
+   */
+  async linkEmail({ email, password }) {
+    const ready = await this.ensureSession();
+    if (!ready.ok) return { ok: false, code: ready.code, message: ready.message };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), AUTH_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${this.config.url}/auth/v1/user`, {
+        method: 'PUT',
+        headers: this._headers(),
+        body: JSON.stringify({ email, password }),
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, code: data.error_code || `http_${res.status}`, message: authMessage(data) };
+      // 確認が要る設定では、メールを踏むまで匿名のまま。踏めば同じIDのまま昇格する。
+      return { ok: true, confirm: !data.email_confirmed_at, email: data.email || email };
+    } catch (e) {
+      return { ok: false, code: e?.name === 'AbortError' ? 'auth_timeout' : 'auth_network', message: '通信が確認できませんでした。' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * 連携済みのアカウントで入り直す（別の端末から続きを遊ぶとき）。
+   *
+   * いま持っているゲストの鍵は捨てる。ゲストのままだった資産へは戻れなくなるので、
+   * 呼ぶ前に必ず確認を取ること。
+   */
+  async signInWithEmail({ email, password }) {
+    const r = await this._authFetch('token?grant_type=password', { email, password });
+    if (!(r.ok && r.data?.access_token)) {
+      return { ok: false, code: r.data?.error_code || r.code || 'auth_failed', message: authMessage(r.data) };
+    }
+    this._saveSession(r.data);
+    this.view = null;
+    this._authError = null;
+    return { ok: true };
   }
 
   /**
@@ -8543,6 +8661,21 @@ class SupaNet {
 
   _userId() {
     return this._userIdOf(this.session?.access_token);
+  }
+
+  /**
+   * 連携済みのメールアドレス。ゲストのままなら null。
+   * 鍵の中身をそのまま読むだけで、問い合わせはしない。
+   */
+  get accountEmail() {
+    try {
+      const token = this.session?.access_token;
+      if (!token) return null;
+      const p = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const claims = JSON.parse(atob(p + '='.repeat((4 - (p.length % 4)) % 4)));
+      if (claims?.is_anonymous) return null;
+      return claims?.email || null;
+    } catch { return null; }
   }
 
   /* ───────────────────────── 未確認操作 ───────────────────────── */
@@ -10693,6 +10826,18 @@ function renderOnline(root, ctx) {
   }
   if (ctx.localOnly) return renderLocalOnlyNotice(root, ctx);
   ctx.enterOnline();
+  // 物語の途中でオンライン対戦へ入らせない。先にその段を終えるか、やめてもらう（§32）。
+  if (ctx.activeSession === 'STORY') {
+    root.appendChild(el('div', { class: 'card' }, [
+      el('h2', { class: 'section-title', text: 'オンライン対戦' }),
+      el('div', { class: 'notice', text: '物語の段が進行中です。先にその段を終えるか、やめてから参加してください。' }),
+      el('div', { class: 'row' }, [
+        el('button', { class: 'btn', type: 'button', text: '物語へ戻る', onclick: () => ctx.setView('story') }),
+        el('button', { class: 'btn sub', type: 'button', text: 'ホームへ', onclick: () => ctx.setView('home') }),
+      ]),
+    ]));
+    return;
+  }
   const view = ctx.net.view;
   const status = ctx.net.status;
   const account = ctx.onlineKind === 'account';
@@ -11783,17 +11928,63 @@ const BACKEND_LABEL = {
  * 遊ぶ場所を選ばせる画面ではない。TRIAD はアカウントのデータだけで動くので、
  * ここでは「いまどこへ保存されているか」と「この端末を失うとどうなるか」を伝える。
  */
+/** メールを結び付ける・結び付けたアカウントで入り直す（§45）。 */
+function emailLinkForm(ctx) {
+  const email = el('input', { type: 'email', id: 'acct-email', autocomplete: 'email', placeholder: 'you@example.com' });
+  const pass = el('input', { type: 'password', id: 'acct-pass', autocomplete: 'new-password', placeholder: '6文字以上' });
+  const note = el('p', { class: 'muted', text: 'いまの資産（ペリカ・所持品・物語の進行・戦績・フレンド）はそのまま引き継がれます。' });
+
+  const run = async (mode) => {
+    const address = email.value.trim();
+    const secret = pass.value;
+    if (!address || !secret) { toast('メールアドレスとパスワードを入力してください。', 'error'); return; }
+    if (mode === 'signin') {
+      const yes = await confirmDialog({
+        title: 'このアカウントで入り直しますか',
+        message: 'いま遊んでいるゲストの資産へは戻れなくなります。連携済みのアカウントを持っている場合だけ実行してください。',
+        confirmLabel: '入り直す', cancelLabel: 'やめる', danger: true,
+      });
+      if (!yes) return;
+      const r = await ctx.api.signInWithEmail(address, secret);
+      toast(r.ok ? 'このアカウントで入り直しました。' : (r.message || '入れませんでした。'), r.ok ? 'info' : 'error');
+      return;
+    }
+    const r = await ctx.api.linkEmail(address, secret);
+    if (!r.ok) { toast(r.message || '連携できませんでした。', 'error'); return; }
+    toast(r.confirm
+      ? `${r.email} に確認メールを送りました。開くと連携が完了します。`
+      : 'メールアドレスを結び付けました。', 'info', 8000);
+    ctx.refresh();
+  };
+
+  return el('div', { style: 'margin-top:10px;padding-top:10px;border-top:1px solid var(--cream-2)' }, [
+    el('h3', { style: 'font-size:13px;font-weight:700;margin:0 0 6px', text: 'メールを結び付ける' }),
+    el('label', { class: 'field' }, [el('span', { text: 'メールアドレス' }), email]),
+    el('label', { class: 'field' }, [el('span', { text: 'パスワード' }), pass]),
+    note,
+    el('div', { class: 'row' }, [
+      el('button', { class: 'btn small', type: 'button', text: '結び付ける', onclick: () => run('link') }),
+      el('button', { class: 'btn sub small', type: 'button', text: '連携済みのアカウントで入る', onclick: () => run('signin') }),
+    ]),
+  ]);
+}
+
 function accountCard(ctx) {
   const p = ctx.profile();
+  const linked = !!ctx.accountEmail;
   return el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: 'アカウント' }),
     el('div', { class: 'kv' }, [
       el('span', { text: '保存先' }),
       el('b', { text: BACKEND_LABEL[ctx.onlineKind] || 'オンライン' }),
     ]),
+    linked ? el('div', { class: 'kv' }, [el('span', { text: 'メール' }), el('b', { text: ctx.accountEmail })]) : null,
     el('div', { class: 'kv' }, [el('span', { text: '表示名' }), el('b', { text: p?.name || '旅人' })]),
     el('p', { class: 'muted', text: 'ペリカ・所持品・着せ替え・物語の進行・戦績はアカウントに保存されます。別の端末から同じアカウントで入れば、同じ続きから遊べます。' }),
-    el('p', { class: 'muted', text: 'いまはゲストとして遊んでいます。ブラウザのデータを消すとこのアカウントへ戻れなくなることがあります。連携（Apple・Google・メール）は準備中です。' }),
+    el('p', { class: 'muted', text: linked
+      ? 'このアカウントはメールアドレスと結び付いています。別の端末でも同じメールで入れば、同じ続きから遊べます。'
+      : 'いまはゲストとして遊んでいます。ブラウザのデータを消すとこのアカウントへ戻れなくなることがあります。メールを結び付けておくと、別の端末からも入れます。' }),
+    ctx.onlineKind === 'supabase' && !linked ? emailLinkForm(ctx) : null,
     ctx.onlineKind === 'supabase'
       ? el('button', {
         class: 'btn sub small', type: 'button', text: 'このアカウントから出る',

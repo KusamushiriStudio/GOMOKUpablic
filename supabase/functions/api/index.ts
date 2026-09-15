@@ -76,7 +76,20 @@ async function viewOf(db: any, userId: string, knownProfile?: any) {
     match: match ? matchView(match, userId) : null,
     queue: null,
     ...story,
+    activeSession: activeSessionOf(match, story.story),
   };
+}
+
+/**
+ * 正式な褒美を持つ進行がいま1つあるか（§33）。
+ *
+ * 練習（CPU・同一端末）は端末の中だけで完結し、褒美も無いのでここには出ない。
+ * 画面側はこれを見て、二重に始めさせず、進行中があればそこへ戻す。
+ */
+function activeSessionOf(match: any, story: any) {
+  if (match && match.state?.status === 'playing') return 'ONLINE_MATCH';
+  if (story && story.status === 'playing') return 'STORY';
+  return 'NONE';
 }
 
 /* ───────────────────── 物語の保管庫 ───────────────────── */
@@ -255,6 +268,21 @@ async function ensureIdentity(db: any, userId: string) {
 }
 
 const asMillis = (value: any) => (value ? new Date(value).getTime() : null);
+
+/**
+ * 在席の「対戦中」を実際に立てる（§23）。
+ *
+ * フレンド一覧は profiles.active_match_id だけを見て IN_MATCH を出す。
+ * 対戦が始まったら3人分を立て、決着・中止・退出で外す。失敗しても対戦そのものは
+ * 進むので、ここでは投げずに諦める（表示が1つ古くなるだけ）。
+ */
+async function setActiveMatch(db: any, userIds: string[], matchId: string | null) {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (!ids.length) return;
+  try {
+    await db.from('profiles').update({ active_match_id: matchId }).in('id', ids);
+  } catch { /* 在席表示は次の更新で追いつく */ }
+}
 
 function createSocialStore(db: any): SocialStore {
   /** 名札とゲーム資産を1人分にまとめる。 */
@@ -544,9 +572,12 @@ async function route(ctx: any, path: string, body: any) {
     await saveRoom(ctx.db, room); return success(await viewOf(ctx.db, userId));
   }
   if (path === '/room/leave' || path === '/world/leave') {
+    const leftBehind = room.members.map((m: any) => m.playerId);
     room.members = room.members.filter((m: any) => m.playerId !== userId);
     if (!room.members.length) await ctx.db.from('triad_rooms').delete().eq('code', room.code);
     else { if (room.hostId === userId) room.hostId = room.members[0].playerId; room.status = 'lobby'; room.matchId = null; await saveRoom(ctx.db, room); }
+    // 部屋が畳まれたら対戦も終わる。残った人の「対戦中」も一緒に外す。
+    await setActiveMatch(ctx.db, room.members.length ? [userId] : leftBehind, null);
     return success(await viewOf(ctx.db, userId));
   }
   if (path === '/room/start') {
@@ -559,6 +590,7 @@ async function route(ctx: any, path: string, body: any) {
     const { error } = await ctx.db.from('triad_matches').insert({ match_id: matchId, room_code: room.code, data: match, revision: 0 });
     if (error) throw error;
     room.matchId = matchId; room.status = 'playing'; await saveRoom(ctx.db, room);
+    await setActiveMatch(ctx.db, seats.map((s: any) => s.userId), matchId);
     return success(await viewOf(ctx.db, userId), { result: { matchId } });
   }
   if (path === '/match/action') {
@@ -585,7 +617,10 @@ async function route(ctx: any, path: string, body: any) {
     if (committed?.status === 'conflict') return fail('request_conflict', '同じ操作IDで異なる要求が届きました。');
     // 決着した手を打った人が、3人分の報酬をまとめて確定する。
     // ここで落ちても、各自の定期取得が同じ確定をやり直せる。
-    if (finished) await settleMatchRewards(ctx.db, next);
+    if (finished) {
+      await settleMatchRewards(ctx.db, next);
+      await setActiveMatch(ctx.db, match.seatSnapshot.map((s: any) => s.userId), null);
+    }
     return success(await viewOf(ctx.db, userId), { ...response, replay: committed?.status === 'replay' });
   }
   if (path === '/ranking') return success(await viewOf(ctx.db, userId), { ranking: [] });

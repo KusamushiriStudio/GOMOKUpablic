@@ -590,6 +590,14 @@ function createSettingsArea() {
     ambient: DEFAULT_AUDIO.ambient,
     muted: DEFAULT_AUDIO.muted,
     effectLevel: DEFAULT_EFFECT_LEVEL,
+    /**
+     * 一度でもアカウントへ設定を保存したか。
+     *
+     * null のうちは「既定値が入っているだけ」なので、端末に残っている設定を
+     * 上書きせず、逆にそれを持ち上げる（オンライン化前からの利用者の音量を
+     * 初回だけ引き継ぐため）。
+     */
+    savedAt: null,
   };
 }
 
@@ -613,6 +621,7 @@ function applySettings(profile, patch) {
     if (key in patch) next[key] = clamp01(patch[key], next[key]);
   }
   if ('effectLevel' in patch && EFFECT_LEVELS.includes(patch.effectLevel)) next.effectLevel = patch.effectLevel;
+  next.savedAt = Date.now();
   profile.settings = next;
   profile.updatedAt = Date.now();
   return { ok: true, result: { settings: { ...next } } };

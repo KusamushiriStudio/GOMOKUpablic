@@ -1273,7 +1273,7 @@ test('アカウントに置いた設定は、読み込みのときにこの端�
 
     const online = createProfile({ id: 'p_online', name: '旅人' });
     online.settings = {
-      ...online.settings, confirmMove: false, bgm: 0.5, muted: true, effectLevel: 'off',
+      ...online.settings, confirmMove: false, bgm: 0.5, muted: true, effectLevel: 'off', savedAt: Date.now(),
     };
     onlineAccount(triad, { profile: online });
     triad.ctx.refresh();
@@ -1332,5 +1332,31 @@ test('ログアウトは端末の保存へ戻らず、接続の画面へ戻す',
     findNode(root, (n) => (
       n.tagName === 'H2' && /接続しています|接続できません|インターネット接続が必要です/.test(n.textContent)
     ), '接続の画面へ戻る');
+  });
+});
+
+test('アカウントに設定が無いうちは、端末に残っている設定を持ち上げる', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    const { audio } = requireModule('audio.js');
+    const { preferences } = requireModule('preferences.js');
+
+    // オンライン化より前からこの端末で遊んでいた人の設定
+    audio.setSettings({ bgm: 0.9, sfx: 0.1 });
+    preferences.set({ confirmMove: false });
+
+    const online = createProfile({ id: 'p_online', name: '旅人' });
+    assert.equal(online.settings.savedAt, null, '新しいプロフィールは未保存の印を持つ');
+    const posts = onlineAccount(triad, { profile: online });
+    triad.ctx.refresh();
+
+    const sent = posts.find((p) => p.path === '/api/settings');
+    assert.ok(sent, 'アカウントへ持ち上げる');
+    assert.equal(sent.body.settings.bgm, 0.9);
+    assert.equal(sent.body.settings.confirmMove, false);
+    assert.equal(audio.settings.bgm, 0.9, '端末の設定は既定値で上書きされない');
   });
 });

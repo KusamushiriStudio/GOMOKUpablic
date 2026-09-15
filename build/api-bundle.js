@@ -463,7 +463,15 @@ __def("../../shared/profile.js", function(__req2) {
       sfx: DEFAULT_AUDIO.sfx,
       ambient: DEFAULT_AUDIO.ambient,
       muted: DEFAULT_AUDIO.muted,
-      effectLevel: DEFAULT_EFFECT_LEVEL
+      effectLevel: DEFAULT_EFFECT_LEVEL,
+      /**
+       * 一度でもアカウントへ設定を保存したか。
+       *
+       * null のうちは「既定値が入っているだけ」なので、端末に残っている設定を
+       * 上書きせず、逆にそれを持ち上げる（オンライン化前からの利用者の音量を
+       * 初回だけ引き継ぐため）。
+       */
+      savedAt: null
     };
   }
   const clamp01 = (v, fallback) => {
@@ -481,6 +489,7 @@ __def("../../shared/profile.js", function(__req2) {
       if (key in patch) next[key] = clamp01(patch[key], next[key]);
     }
     if ("effectLevel" in patch && EFFECT_LEVELS.includes(patch.effectLevel)) next.effectLevel = patch.effectLevel;
+    next.savedAt = Date.now();
     profile2.settings = next;
     profile2.updatedAt = Date.now();
     return { ok: true, result: { settings: { ...next } } };
@@ -4691,8 +4700,15 @@ async function viewOf(db, userId, knownProfile) {
     room: room ? publicRoom(room) : null,
     match: match ? matchView(match, userId) : null,
     queue: null,
-    ...story
+    ...story,
+    activeSession: activeSessionOf(match, story.story)
   };
+}
+function activeSessionOf(match, story) {
+  var _a;
+  if (match && ((_a = match.state) == null ? void 0 : _a.status) === "playing") return "ONLINE_MATCH";
+  if (story && story.status === "playing") return "STORY";
+  return "NONE";
 }
 function storyRowOf(row) {
   var _a;
@@ -4831,6 +4847,14 @@ async function ensureIdentity(db, userId) {
   }
 }
 var asMillis = (value) => value ? new Date(value).getTime() : null;
+async function setActiveMatch(db, userIds, matchId) {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (!ids.length) return;
+  try {
+    await db.from("profiles").update({ active_match_id: matchId }).in("id", ids);
+  } catch {
+  }
+}
 function createSocialStore(db) {
   const rowsToPlayers = async (rows) => {
     if (!rows.length) return [];
@@ -5121,6 +5145,7 @@ async function route(ctx, path, body) {
     return success(await viewOf(ctx.db, userId));
   }
   if (path === "/room/leave" || path === "/world/leave") {
+    const leftBehind = room.members.map((m) => m.playerId);
     room.members = room.members.filter((m) => m.playerId !== userId);
     if (!room.members.length) await ctx.db.from("triad_rooms").delete().eq("code", room.code);
     else {
@@ -5129,6 +5154,7 @@ async function route(ctx, path, body) {
       room.matchId = null;
       await saveRoom(ctx.db, room);
     }
+    await setActiveMatch(ctx.db, room.members.length ? [userId] : leftBehind, null);
     return success(await viewOf(ctx.db, userId));
   }
   if (path === "/room/start") {
@@ -5143,6 +5169,7 @@ async function route(ctx, path, body) {
     room.matchId = matchId;
     room.status = "playing";
     await saveRoom(ctx.db, room);
+    await setActiveMatch(ctx.db, seats.map((s) => s.userId), matchId);
     return success(await viewOf(ctx.db, userId), { result: { matchId } });
   }
   if (path === "/match/action") {
@@ -5170,7 +5197,10 @@ async function route(ctx, path, body) {
     const committed = data == null ? void 0 : data[0];
     if ((committed == null ? void 0 : committed.status) === "stale") return fail3("stale_revision", "\u76E4\u9762\u304C\u66F4\u65B0\u3055\u308C\u3066\u3044\u307E\u3059\u3002");
     if ((committed == null ? void 0 : committed.status) === "conflict") return fail3("request_conflict", "\u540C\u3058\u64CD\u4F5CID\u3067\u7570\u306A\u308B\u8981\u6C42\u304C\u5C4A\u304D\u307E\u3057\u305F\u3002");
-    if (finished) await settleMatchRewards(ctx.db, next);
+    if (finished) {
+      await settleMatchRewards(ctx.db, next);
+      await setActiveMatch(ctx.db, match.seatSnapshot.map((s) => s.userId), null);
+    }
     return success(await viewOf(ctx.db, userId), { ...response, replay: (committed == null ? void 0 : committed.status) === "replay" });
   }
   if (path === "/ranking") return success(await viewOf(ctx.db, userId), { ranking: [] });
