@@ -52,6 +52,8 @@ export type StoryStore = {
   loadProfile(userId: string): Promise<{ profile: any; revision: number }>;
   /** 進行中の run（1アカウント1本）。無ければ null。 */
   activeRun(userId: string): Promise<StoryRunRow | null>;
+  /** 直近の run。決着済みでも返す（再接続して結果画面へ戻れるように）。 */
+  latestRun(userId: string): Promise<StoryRunRow | null>;
   findRun(runId: string): Promise<StoryRunRow | null>;
   commit(input: CommitInput): Promise<CommitResult>;
   /** 進行中のオンライン対戦があるか（§32 同時進行の禁止） */
@@ -76,9 +78,14 @@ function runView(row: { runId: string; stageId: number; status: string; state: a
   };
 }
 
-/** 進行中の物語を画面へ載せる（再接続のときはこれだけで盤へ戻れる）。 */
+/**
+ * 物語を画面へ載せる（再接続のときはこれだけで盤へ戻れる）。
+ *
+ * 決着済みの run も返す。勝った直後に通信が切れても、つなぎ直せば
+ * 同じ結果画面へ戻れる（§28）。新しい段を始めた時点で置き換わる。
+ */
 export async function storyView(store: StoryStore, userId: string) {
-  const run = await store.activeRun(userId);
+  const run = await store.latestRun(userId);
   return { story: runView(run) };
 }
 

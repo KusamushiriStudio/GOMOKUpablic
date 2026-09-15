@@ -1574,10 +1574,10 @@ __def("../../shared/rules.js", function(__req2) {
     }
     advanceTurn(state);
   }
-  function applyAction(state, action) {
+  function applyAction(state, action2) {
     const next = cloneState(state);
     try {
-      const event = perform(next, action);
+      const event = perform(next, action2);
       return { ok: true, state: next, event };
     } catch (e) {
       if (e instanceof RuleError) {
@@ -1586,24 +1586,24 @@ __def("../../shared/rules.js", function(__req2) {
       throw e;
     }
   }
-  function perform(state, action) {
-    if (!action || typeof action !== "object") throw new RuleError(ERR.BAD_ACTION);
+  function perform(state, action2) {
+    if (!action2 || typeof action2 !== "object") throw new RuleError(ERR.BAD_ACTION);
     requirePlaying(state);
-    const seat = Number(action.seat);
+    const seat = Number(action2.seat);
     if (!Number.isInteger(seat) || seat < 1 || seat > SEAT_COUNT(state)) throw new RuleError(ERR.BAD_ACTION);
     requireTurn(state, seat);
     if (state.pending && state.pending.remaining > 0) {
       if (state.pending.seat !== seat) throw new RuleError(ERR.NOT_YOUR_TURN);
-      if (action.type !== "extra") throw new RuleError(ERR.NEED_EXTRA);
-      return doExtra(state, seat, Number(action.index));
+      if (action2.type !== "extra") throw new RuleError(ERR.NEED_EXTRA);
+      return doExtra(state, seat, Number(action2.index));
     }
-    switch (action.type) {
+    switch (action2.type) {
       case "place":
-        return doPlace(state, seat, Number(action.index));
+        return doPlace(state, seat, Number(action2.index));
       case "pass":
         return doPass(state, seat);
       case "skill":
-        return doSkill(state, seat, action);
+        return doSkill(state, seat, action2);
       case "extra":
         throw new RuleError(ERR.BAD_ACTION);
       default:
@@ -1635,11 +1635,11 @@ __def("../../shared/rules.js", function(__req2) {
     finalizeAfterOperation(state, seat, ev);
     return ev;
   }
-  function doSkill(state, seat, action) {
+  function doSkill(state, seat, action2) {
     const seatInfo = seatOf(state, seat);
     const list = skillsOf(state, seat);
     if (!list.length) throw new RuleError(ERR.NO_SKILL);
-    const skill = action.skillId ? list.find((sk) => sk.id === action.skillId) : list.length === 1 ? list[0] : null;
+    const skill = action2.skillId ? list.find((sk) => sk.id === action2.skillId) : list.length === 1 ? list[0] : null;
     if (!skill) throw new RuleError(ERR.NO_SKILL);
     const v = v99Of(state);
     const form = v ? v99FormOf(state, seat, skill.id) : null;
@@ -1648,7 +1648,7 @@ __def("../../shared/rules.js", function(__req2) {
     const maxUses = v ? usesCapOf(state, seat, skill.id) : skill.uses;
     if (state.energy[seat] < cost) throw new RuleError(ERR.NOT_ENOUGH_ENERGY);
     if (usesOf(state, seat, skill.id) >= maxUses) throw new RuleError(ERR.NO_USES_LEFT);
-    const detail = SKILL_HANDLERS[skill.id](state, seat, action);
+    const detail = SKILL_HANDLERS[skill.id](state, seat, action2);
     state.energy[seat] -= cost;
     if (detail.brokeWard && v && v.wardBreakEnergy) {
       state.energy[seat] = Math.min(MAX_ENERGY, state.energy[seat] + v.wardBreakEnergy);
@@ -1739,8 +1739,8 @@ __def("../../shared/rules.js", function(__req2) {
   }
   const SKILL_HANDLERS = {
     // ヒバナ / 火花
-    spark(state, seat, action) {
-      const index = Number(action.index);
+    spark(state, seat, action2) {
+      const index = Number(action2.index);
       const breaks = sparkBreaksWard(state);
       const owner = requireEnemyStone(state, seat, index, { allowGuarded: breaks });
       const warded = !!state.guards[index];
@@ -1749,17 +1749,17 @@ __def("../../shared/rules.js", function(__req2) {
       return { index, targetOwner: owner, brokeWard: breaks && warded };
     },
     // マモリ / 結界
-    ward(state, seat, action) {
-      const index = Number(action.index);
+    ward(state, seat, action2) {
+      const index = Number(action2.index);
       requireOwnStone(state, seat, index);
       if (state.guards[index]) throw new RuleError(ERR.BAD_TARGET);
       state.guards[index] = 1;
       return { index, targetOwner: seat };
     },
     // ハヤテ / 風渡り
-    windwalk(state, seat, action) {
-      const from = Number(action.from);
-      const to = Number(action.to);
+    windwalk(state, seat, action2) {
+      const from = Number(action2.from);
+      const to = Number(action2.to);
       requireOwnStone(state, seat, from);
       requireMoveDestination(state, from, to);
       const guard = state.guards[from];
@@ -1770,8 +1770,8 @@ __def("../../shared/rules.js", function(__req2) {
       return { from, to, targetOwner: seat };
     },
     // ユキネ / 氷結
-    freeze(state, seat, action) {
-      const index = Number(action.index);
+    freeze(state, seat, action2) {
+      const index = Number(action2.index);
       requireIndex(state, index);
       if (state.stones[index] !== 0) throw new RuleError(ERR.BAD_TARGET);
       if (isFrozen(state, index)) throw new RuleError(ERR.FROZEN);
@@ -1780,9 +1780,9 @@ __def("../../shared/rules.js", function(__req2) {
       return { index, releaseAt: state.ice[index] };
     },
     // クオン / 引力
-    pull(state, seat, action) {
-      const from = Number(action.from);
-      const to = Number(action.to);
+    pull(state, seat, action2) {
+      const from = Number(action2.from);
+      const to = Number(action2.to);
       const owner = requireEnemyUnguardedStone(state, seat, from);
       requireMoveDestination(state, from, to);
       state.stones[from] = 0;
@@ -1792,8 +1792,8 @@ __def("../../shared/rules.js", function(__req2) {
       return { from, to, targetOwner: owner };
     },
     // アカリ / 転光
-    transmute(state, seat, action) {
-      const index = Number(action.index);
+    transmute(state, seat, action2) {
+      const index = Number(action2.index);
       const owner = requireEnemyStone(state, seat, index, {
         guardedError: v99Of(state) ? ERR.GUARDED_TRANSMUTE : ERR.GUARDED
       });
@@ -2388,55 +2388,448 @@ __def("../../shared/rules.js", function(__req2) {
   }
   return { BOARD_W, BOARD_H, BOARD_SIZE, indexToLabel, labelOf, ERR, ERR_MESSAGE_JA, errorMessage, createMatch, pickStartSeat, cloneState, isFrozen, frozenIndices, canPlaceAt, legalPlacements, emptyCount, neighborsOf, isAdjacent, findWinningLine, effectiveSkill, skillInRuleset, skillForSeat, minStoneResult, isWinnerSeat, outcomeForSeat, v99Of, orderIndexOf, unlockTurnOf, isEnhanced, v99FormOf, usesCapOf, v99Info, skillsOf, skillOfId, usesOf, applyAction, skillFirstTargets, skillSecondTargets, usableSkills, canUseSkill, mustPass, fillWinCells, immediateWinCells, chooseExtraIndex, chooseCpuAction, publicSnapshot };
 });
-__def("../../shared/rng.js", function(__req2) {
-  class InsecureRandomError extends Error {
-    constructor() {
-      super("\u5B89\u5168\u306A\u4E71\u6570\u304C\u5229\u7528\u3067\u304D\u306A\u3044\u305F\u3081\u3001\u62BD\u9078\u3092\u5B9F\u884C\u3067\u304D\u307E\u305B\u3093\u3002");
-      this.code = "insecure_random";
-    }
+__def("../../shared/story/engine.js", function(__req2) {
+  const { createMatch, applyAction, cloneState, findWinningLine, emptyCount, chooseCpuAction, publicSnapshot, isFrozen, neighborsOf, labelOf, skillsOf, usesOf } = __req2("../../shared/rules.js");
+  const { RULESET } = __req2("../../shared/rulesets.js");
+  const { CHARACTER_BY_ID, SKILL_BY_CHARACTER, MAX_ENERGY, WIN_LENGTH, LINE_DIRS, BOARD_W } = __req2("../../shared/constants.js");
+  const { STAGE_BY_ID, TRAINING_BOARD_BY_ID, TRAINING_BOARD_BY_STAGE, TELEGRAPH, TELEGRAPHS, bossPhasesOfStage, unlockedSkillsAt, unlockedCharsAt } = __req2("../../shared/story/stages.js");
+  const PLAYER_SEAT2 = 1;
+  const ENEMY_SEAT = 2;
+  function createStoryMatch2(opts) {
+    const stage = STAGE_BY_ID[Number(opts.stageId)];
+    if (!stage) throw new Error(`\u672A\u77E5\u306E\u30B9\u30C6\u30FC\u30B8: ${opts.stageId}`);
+    const board = stage.training ? TRAINING_BOARD_BY_ID[stage.training] : TRAINING_BOARD_BY_STAGE[stage.id];
+    const skills = board && Array.isArray(board.skills) ? board.skills.filter((id) => unlockedSkillsAt(stage.id).includes(id)) : unlockedSkillsAt(stage.id);
+    const masters = unlockedCharsAt(stage.id);
+    let charId = opts.charId && CHARACTER_BY_ID[opts.charId] ? opts.charId : null;
+    if (!charId) charId = masters[masters.length - 1] || "hibana";
+    const state = createMatch({
+      matchId: String(opts.matchId || `story-${stage.id}-${opts.startedAt ?? Date.now()}`),
+      mode: "story",
+      ruleset: RULESET.STORY,
+      startedAt: opts.startedAt,
+      seats: [
+        {
+          seat: PLAYER_SEAT2,
+          name: String(opts.playerName || "\u3042\u306A\u305F"),
+          charId,
+          kind: "human",
+          cosmetics: opts.cosmetics ?? null,
+          skills
+        },
+        {
+          seat: ENEMY_SEAT,
+          name: stage.enemy.name,
+          charId: stage.enemy.charId,
+          kind: "cpu"
+        }
+      ]
+    });
+    state.story = {
+      stageId: stage.id,
+      chapter: stage.chapter,
+      boss: !!stage.boss,
+      level: stage.enemy.level,
+      trainingId: board ? board.id : null,
+      enemyTurns: 0,
+      phase: 0,
+      telegraph: null,
+      telegraphUses: { [TELEGRAPH.SNIPE]: 0, [TELEGRAPH.SEIZE]: 0 },
+      scriptIndex: 0,
+      script: board ? [...board.enemyScript || []] : [],
+      allowedTelegraphs: [...stage.telegraphs || []],
+      skills: [...skills],
+      cleared: false
+    };
+    if (board) applyTrainingBoard(state, board);
+    return state;
   }
-  function getCryptoObj() {
-    const c = globalThis.crypto;
-    if (c && typeof c.getRandomValues === "function") return c;
+  function applyTrainingBoard(state, board) {
+    var _a;
+    for (const i of board.player) state.stones[i] = PLAYER_SEAT2;
+    for (const i of board.enemy) state.stones[i] = ENEMY_SEAT;
+    for (const i of board.playerGuards || []) {
+      if (state.stones[i] === PLAYER_SEAT2) state.guards[i] = 1;
+    }
+    for (const seat of [PLAYER_SEAT2, ENEMY_SEAT]) {
+      const v = Number(((_a = board.energy) == null ? void 0 : _a[seat]) ?? 0);
+      state.energy[seat] = Math.min(MAX_ENERGY, Math.max(0, v));
+    }
+    state.stats[PLAYER_SEAT2].placed = 0;
+    state.stats[ENEMY_SEAT].placed = 0;
+    if (board.telegraph) {
+      state.story.telegraph = {
+        id: board.telegraph.id,
+        targets: [...board.telegraph.targets || []],
+        seat: Number(board.telegraph.by ?? ENEMY_SEAT),
+        declaredAt: -1
+        // 開始前に予告済み。敵の最初の手番で解決する。
+      };
+    }
+    state.turn = PLAYER_SEAT2;
+  }
+  function pushStoryEvent(state, ev) {
+    state.eventSeq += 1;
+    const full = { ...ev, id: `${state.matchId}#s${state.eventSeq}`, seq: state.eventSeq, at: ev.at ?? Date.now() };
+    state.events.push(full);
+    if (state.events.length > 40) state.events.splice(0, state.events.length - 40);
+    return full;
+  }
+  function settleBoard(state) {
+    state.opCount += 1;
+    state.revision += 1;
+    const win = findWinningLine(state, 0);
+    if (win) {
+      state.status = "finished";
+      state.result = { kind: "win", winner: win.owner, winners: [win.owner], line: win.line, reason: "five" };
+      state.finishedAt = Date.now();
+      return true;
+    }
+    if (emptyCount(state) === 0) {
+      state.status = "finished";
+      state.result = { kind: "draw", winner: 0, winners: [], line: [], reason: "board_full" };
+      state.finishedAt = Date.now();
+      return true;
+    }
+    return false;
+  }
+  function usedForTelegraph(state, id) {
+    const tg = TELEGRAPHS[id];
+    const own = state.story.telegraphUses[id] || 0;
+    if (tg.sharesUsesWith && skillsOf(state, ENEMY_SEAT).some((skill) => skill.id === tg.sharesUsesWith)) {
+      return own + usesOf(state, ENEMY_SEAT, tg.sharesUsesWith);
+    }
+    return own;
+  }
+  function canTelegraph(state, id) {
+    const tg = TELEGRAPHS[id];
+    if (!tg) return false;
+    if (!state.story.allowedTelegraphs.includes(id)) return false;
+    if (state.story.telegraph) return false;
+    if (state.energy[ENEMY_SEAT] < tg.cost) return false;
+    if (usedForTelegraph(state, id) >= tg.uses) return false;
+    return true;
+  }
+  function consumeTelegraph(state, id) {
+    const tg = TELEGRAPHS[id];
+    state.energy[ENEMY_SEAT] = Math.max(0, state.energy[ENEMY_SEAT] - tg.cost);
+    state.story.telegraphUses[id] = (state.story.telegraphUses[id] || 0) + 1;
+  }
+  function snipeTarget(state, targets) {
+    for (const idx of targets) {
+      if (!Number.isInteger(idx) || idx < 0 || idx >= state.stones.length) continue;
+      if (state.stones[idx] === PLAYER_SEAT2) return idx;
+    }
     return null;
   }
-  function hasSecureRandom() {
-    return getCryptoObj() !== null;
-  }
-  function secureRandomInt(maxExclusive) {
-    if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
-      throw new RangeError("maxExclusive \u306F 1 \u4EE5\u4E0A\u306E\u6574\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059");
+  function resolveTelegraph(state) {
+    const t = state.story.telegraph;
+    if (!t) return { resolved: false, outcome: null, finished: false, event: null };
+    if (t.declaredAt >= 0 && t.declaredAt >= state.story.enemyTurns) {
+      return { resolved: false, outcome: null, finished: false, event: null };
     }
-    const c = getCryptoObj();
-    if (!c) throw new InsecureRandomError();
-    if (maxExclusive === 1) return 0;
-    const limit = Math.floor(4294967296 / maxExclusive) * maxExclusive;
-    const buf = new Uint32Array(1);
-    for (let attempt = 0; attempt < 1e3; attempt += 1) {
-      c.getRandomValues(buf);
-      if (buf[0] < limit) return buf[0] % maxExclusive;
+    const tg = TELEGRAPHS[t.id];
+    const targets = Array.isArray(t.targets) ? t.targets : [];
+    state.story.telegraph = null;
+    if (!tg) return { resolved: true, outcome: "invalid", finished: false, event: null };
+    consumeTelegraph(state, t.id);
+    const done = (outcome, text, index, finished2 = false) => {
+      const ev = pushStoryEvent(state, {
+        type: "telegraph",
+        phase: outcome,
+        seat: ENEMY_SEAT,
+        telegraphId: t.id,
+        telegraphName: tg.name,
+        index: index ?? null,
+        label: index != null ? labelOf(state, index) : null,
+        text
+      });
+      return { resolved: true, outcome, finished: finished2, event: ev };
+    };
+    if (t.id === TELEGRAPH.SNIPE) {
+      const idx2 = snipeTarget(state, targets);
+      if (idx2 == null) return done("missed", `${tg.name}\u306F\u7A7A\u3092\u6483\u3063\u305F\u3002`, targets[0] ?? null);
+      if (state.guards[idx2]) return done("blocked", `${tg.name}\u306F\u5B88\u308A\u306B\u9632\u304C\u308C\u305F\u3002`, idx2);
+      state.stones[idx2] = 0;
+      state.guards[idx2] = 0;
+      const finished2 = settleBoard(state);
+      return done("hit", `${tg.name}\u304C\u547D\u4E2D\u3057\u305F\u3002`, idx2, finished2);
     }
-    throw new InsecureRandomError();
+    const idx = targets[0];
+    if (!Number.isInteger(idx) || idx < 0 || idx >= state.stones.length) {
+      return done("missed", `${tg.name}\u306F\u7684\u3092\u5931\u3063\u305F\u3002`, null);
+    }
+    if (isFrozen(state, idx)) return done("frozen", `${tg.name}\u306F\u6C37\u7D50\u306B\u963B\u307E\u308C\u305F\u3002`, idx);
+    if (state.stones[idx] === ENEMY_SEAT) return done("missed", `${tg.name}\u306F\u3059\u3067\u306B\u81EA\u5206\u306E\u77F3\u3060\u3063\u305F\u3002`, idx);
+    if (state.stones[idx] === PLAYER_SEAT2) {
+      if (state.guards[idx]) return done("blocked", `${tg.name}\u306F\u5B88\u308A\u306B\u9632\u304C\u308C\u305F\u3002`, idx);
+      state.stones[idx] = ENEMY_SEAT;
+      state.guards[idx] = 0;
+      const finished2 = settleBoard(state);
+      return done("hit", `${tg.name}\u3067\u77F3\u3092\u596A\u308F\u308C\u305F\u3002`, idx, finished2);
+    }
+    state.stones[idx] = ENEMY_SEAT;
+    state.guards[idx] = 0;
+    state.stats[ENEMY_SEAT].placed += 1;
+    const finished = settleBoard(state);
+    return done("hit", `${tg.name}\u3067 ${labelOf(state, idx)} \u3092\u5360\u9818\u3055\u308C\u305F\u3002`, idx, finished);
   }
-  function secureHexUpper(length) {
-    const c = getCryptoObj();
-    if (!c) throw new InsecureRandomError();
-    const bytes = new Uint8Array(Math.ceil(length / 2));
-    c.getRandomValues(bytes);
-    let s = "";
-    for (const b of bytes) s += b.toString(16).padStart(2, "0");
-    return s.slice(0, length).toUpperCase();
+  function applyBossPhase(state) {
+    if (!state.story.boss) return null;
+    const phases = bossPhasesOfStage(state.story.stageId);
+    const turn = state.story.enemyTurns + 1;
+    const hit = phases.find((p) => p.atEnemyTurn === turn);
+    if (!hit) return null;
+    const step = phases.indexOf(hit) + 1;
+    if (state.story.phase >= step) return null;
+    state.story.phase = step;
+    return pushStoryEvent(state, {
+      type: "boss_phase",
+      seat: ENEMY_SEAT,
+      phase: step,
+      look: hit.look,
+      text: hit.line
+    });
   }
-  function secureToken(bytes = 32) {
-    const c = getCryptoObj();
-    if (!c) throw new InsecureRandomError();
-    const arr = new Uint8Array(bytes);
-    c.getRandomValues(arr);
-    let s = "";
-    for (const b of arr) s += b.toString(16).padStart(2, "0");
-    return s;
+  function lineRun(state, index, owner) {
+    let best = 1;
+    const col = index % BOARD_W;
+    const row = Math.floor(index / BOARD_W);
+    for (const [dc, dr] of LINE_DIRS) {
+      let count = 1;
+      for (const sign of [1, -1]) {
+        let c = col + dc * sign;
+        let r = row + dr * sign;
+        while (c >= 0 && c < BOARD_W && r >= 0 && r < state.height && state.stones[r * BOARD_W + c] === owner) {
+          count += 1;
+          c += dc * sign;
+          r += dr * sign;
+        }
+      }
+      best = Math.max(best, count);
+    }
+    return best;
   }
-  return { InsecureRandomError, hasSecureRandom, secureRandomInt, secureHexUpper, secureToken };
+  function seizeWins(state, index) {
+    if (state.guards[index]) return false;
+    if (state.stones[index] === ENEMY_SEAT) return false;
+    if (isFrozen(state, index)) return false;
+    const probe = cloneState(state);
+    probe.stones[index] = ENEMY_SEAT;
+    return lineRun(probe, index, ENEMY_SEAT) >= WIN_LENGTH;
+  }
+  function sniperTarget(state) {
+    const cands = [];
+    for (let i = 0; i < state.stones.length; i += 1) {
+      if (state.stones[i] !== PLAYER_SEAT2 || state.guards[i]) continue;
+      const run = lineRun(state, i, PLAYER_SEAT2);
+      if (run >= WIN_LENGTH - 1) cands.push({ index: i, run });
+    }
+    cands.sort((a, b) => b.run - a.run || a.index - b.index);
+    return cands.length ? cands[0] : null;
+  }
+  function chooseEnemyAction(state, rand = Math.random) {
+    const st = state.story;
+    while (st.scriptIndex < st.script.length) {
+      const idx = st.script[st.scriptIndex];
+      st.scriptIndex += 1;
+      if (state.stones[idx] === 0 && !isFrozen(state, idx)) {
+        return { kind: "action", action: { type: "place", seat: ENEMY_SEAT, index: idx } };
+      }
+    }
+    const level = st.level || 1;
+    if (level >= 5) {
+      if (canTelegraph(state, TELEGRAPH.SEIZE)) {
+        for (let i = 0; i < state.stones.length; i += 1) {
+          if (seizeWins(state, i)) return { kind: "telegraph", id: TELEGRAPH.SEIZE, targets: [i] };
+        }
+      }
+      if (canTelegraph(state, TELEGRAPH.SNIPE)) {
+        const t = sniperTarget(state);
+        if (t && t.run >= WIN_LENGTH - 1) return { kind: "telegraph", id: TELEGRAPH.SNIPE, targets: [t.index] };
+      }
+    }
+    if (level >= 4) {
+      const skillAction = chooseEnemySkill(state);
+      if (skillAction) return { kind: "action", action: skillAction };
+    }
+    const action2 = chooseCpuAction(state, ENEMY_SEAT, rand);
+    return action2 ? { kind: "action", action: action2 } : { kind: "none" };
+  }
+  function chooseEnemySkill(state) {
+    const list = skillsOf(state, ENEMY_SEAT);
+    const skill = list[0];
+    if (!skill) return null;
+    if (state.energy[ENEMY_SEAT] < skill.cost) return null;
+    if (usesOf(state, ENEMY_SEAT, skill.id) >= skill.uses) return null;
+    const size = state.stones.length;
+    switch (skill.id) {
+      case "transmute": {
+        for (let i = 0; i < size; i += 1) {
+          if (state.stones[i] === PLAYER_SEAT2 && seizeWins(state, i)) {
+            return { type: "skill", seat: ENEMY_SEAT, skillId: "transmute", index: i };
+          }
+        }
+        return null;
+      }
+      case "spark": {
+        const t = sniperTarget(state);
+        if (t && t.run >= WIN_LENGTH - 1) return { type: "skill", seat: ENEMY_SEAT, skillId: "spark", index: t.index };
+        return null;
+      }
+      case "ward": {
+        for (let i = 0; i < size; i += 1) {
+          if (state.stones[i] !== ENEMY_SEAT || state.guards[i]) continue;
+          if (lineRun(state, i, ENEMY_SEAT) >= WIN_LENGTH - 1) return { type: "skill", seat: ENEMY_SEAT, skillId: "ward", index: i };
+        }
+        return null;
+      }
+      case "pull": {
+        const t = sniperTarget(state);
+        if (!t) return null;
+        const dest = neighborsOf(state, t.index).find((d) => state.stones[d] === 0 && !isFrozen(state, d));
+        if (dest === void 0) return null;
+        return { type: "skill", seat: ENEMY_SEAT, skillId: "pull", from: t.index, to: dest };
+      }
+      case "windwalk":
+        return null;
+      // 通常の着手のほうが強いので使わない
+      case "freeze": {
+        for (let i = 0; i < size; i += 1) {
+          if (state.stones[i] !== 0 || isFrozen(state, i)) continue;
+          if (lineRun(state, i, PLAYER_SEAT2) >= WIN_LENGTH) return { type: "skill", seat: ENEMY_SEAT, skillId: "freeze", index: i };
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  }
+  function applyPlayerAction2(state, action2) {
+    if (Number((action2 == null ? void 0 : action2.seat) ?? PLAYER_SEAT2) !== PLAYER_SEAT2) {
+      return { ok: false, code: "not_your_turn", message: "\u3042\u306A\u305F\u306E\u624B\u756A\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002" };
+    }
+    const res = applyAction(state, { ...action2, seat: PLAYER_SEAT2 });
+    if (!res.ok) return res;
+    res.state.story = cloneStory(state.story);
+    return res;
+  }
+  function cloneStory(story) {
+    return JSON.parse(JSON.stringify(story));
+  }
+  function passTurnToPlayer(state) {
+    state.opCount += 1;
+    state.revision += 1;
+    state.turn = PLAYER_SEAT2;
+    state.energy[PLAYER_SEAT2] = Math.min(MAX_ENERGY, state.energy[PLAYER_SEAT2] + 1);
+    for (let i = 0; i < state.ice.length; i += 1) {
+      if (state.ice[i] > 0 && state.opCount >= state.ice[i]) {
+        state.ice[i] = 0;
+        state.iceOwner[i] = 0;
+      }
+    }
+  }
+  function runEnemyTurn2(state, rand = Math.random) {
+    let next = cloneState(state);
+    next.story = cloneStory(state.story);
+    const events = [];
+    if (next.status !== "playing" || next.turn !== ENEMY_SEAT) return { state: next, events };
+    const phaseEv = applyBossPhase(next);
+    if (phaseEv) events.push(phaseEv);
+    const tg = resolveTelegraph(next);
+    if (tg.resolved) {
+      if (tg.event) events.push(tg.event);
+      next.story.enemyTurns += 1;
+      if (!tg.finished) {
+        if (tg.outcome === "hit") {
+          next.turn = PLAYER_SEAT2;
+          next.energy[PLAYER_SEAT2] = Math.min(MAX_ENERGY, next.energy[PLAYER_SEAT2] + 1);
+          for (let i = 0; i < next.ice.length; i += 1) {
+            if (next.ice[i] > 0 && next.opCount >= next.ice[i]) {
+              next.ice[i] = 0;
+              next.iceOwner[i] = 0;
+            }
+          }
+        } else {
+          passTurnToPlayer(next);
+        }
+      }
+      return { state: next, events };
+    }
+    const choice = chooseEnemyAction(next, rand);
+    if (choice.kind === "telegraph") {
+      const def = TELEGRAPHS[choice.id];
+      next.story.telegraph = {
+        id: choice.id,
+        targets: [...choice.targets],
+        seat: ENEMY_SEAT,
+        declaredAt: next.story.enemyTurns
+      };
+      events.push(pushStoryEvent(next, {
+        type: "telegraph",
+        phase: "declared",
+        seat: ENEMY_SEAT,
+        telegraphId: choice.id,
+        telegraphName: def.name,
+        index: choice.targets[0],
+        label: choice.targets.map((i) => labelOf(next, i)).join("\u2192"),
+        text: `${def.name}\u3002\u6B21\u306E\u624B\u756A\u3067 ${choice.targets.map((i) => labelOf(next, i)).join(" \u2192 ")} \u3092\u72D9\u3046\u3002`
+      }));
+      next.story.enemyTurns += 1;
+      passTurnToPlayer(next);
+      return { state: next, events };
+    }
+    if (choice.kind === "none") {
+      next.story.enemyTurns += 1;
+      return { state: next, events };
+    }
+    const res = applyAction(next, choice.action);
+    if (!res.ok) {
+      const fallback = chooseCpuAction(next, ENEMY_SEAT, rand);
+      const res2 = fallback ? applyAction(next, fallback) : { ok: false };
+      if (!res2.ok) {
+        next.story.enemyTurns += 1;
+        return { state: next, events };
+      }
+      res2.state.story = next.story;
+      next = res2.state;
+      events.push(res2.event);
+    } else {
+      res.state.story = next.story;
+      next = res.state;
+      events.push(res.event);
+    }
+    next.story.enemyTurns += 1;
+    return { state: next, events };
+  }
+  function storySnapshot2(state) {
+    const base = publicSnapshot(state);
+    const st = state.story || null;
+    return {
+      ...base,
+      story: st && {
+        stageId: st.stageId,
+        chapter: st.chapter,
+        boss: st.boss,
+        trainingId: st.trainingId,
+        enemyTurns: st.enemyTurns,
+        phase: st.phase,
+        skills: [...st.skills || []],
+        // 予告は隠さない。プレイヤーが対処できることが前提の技のため。
+        telegraph: st.telegraph ? { id: st.telegraph.id, targets: [...st.telegraph.targets] } : null,
+        cleared: st.cleared
+      }
+    };
+  }
+  function storyOutcome2(state) {
+    if (state.status !== "finished") return null;
+    const r = state.result;
+    if (!r) return null;
+    if (r.kind === "win") return { outcome: r.winner === PLAYER_SEAT2 ? "win" : "lose", line: r.line };
+    if (r.kind === "aborted") return { outcome: "aborted", line: [] };
+    return { outcome: "draw", line: [] };
+  }
+  return { TELEGRAPH, TELEGRAPHS, PLAYER_SEAT: PLAYER_SEAT2, ENEMY_SEAT, createStoryMatch: createStoryMatch2, canTelegraph, resolveTelegraph, applyBossPhase, chooseEnemyAction, applyPlayerAction: applyPlayerAction2, runEnemyTurn: runEnemyTurn2, storySnapshot: storySnapshot2, storyOutcome: storyOutcome2 };
 });
 __def("../../shared/story/stages.js", function(__req2) {
   const { BOARD_W } = __req2("../../shared/constants.js");
@@ -3450,6 +3843,56 @@ __def("../../shared/story/stages.js", function(__req2) {
   }
   return { STORY_DATA_VERSION, ix, TELEGRAPH, TELEGRAPHS, SKILL_UNLOCKS, SKILL_UNLOCK_BY_STAGE, SEALS, SEAL_BY_STAGE, unlockedCharsAt, unlockedSkillsAt, CHAPTERS, CHAPTER_BY_ID, TRAINING_BOARDS, TRAINING_BOARD_BY_ID, TRAINING_BOARD_BY_STAGE, BOSS_PHASES, BOSS_SHOW, STAGE_REWARD, BOSS_REWARD, STORY_XP, DUPLICATE_DROP_XP, STAGES, STAGE_BY_ID, STORY_STAGE_COUNT, BOSS_STAGES, STORY_TOTAL_PERICA, STORY_DROP_IDS, stageById, stagesOfChapter, trainingBoardOfStage, bossPhasesOfStage, nextStageId };
 });
+__def("../../shared/rng.js", function(__req2) {
+  class InsecureRandomError extends Error {
+    constructor() {
+      super("\u5B89\u5168\u306A\u4E71\u6570\u304C\u5229\u7528\u3067\u304D\u306A\u3044\u305F\u3081\u3001\u62BD\u9078\u3092\u5B9F\u884C\u3067\u304D\u307E\u305B\u3093\u3002");
+      this.code = "insecure_random";
+    }
+  }
+  function getCryptoObj() {
+    const c = globalThis.crypto;
+    if (c && typeof c.getRandomValues === "function") return c;
+    return null;
+  }
+  function hasSecureRandom() {
+    return getCryptoObj() !== null;
+  }
+  function secureRandomInt(maxExclusive) {
+    if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
+      throw new RangeError("maxExclusive \u306F 1 \u4EE5\u4E0A\u306E\u6574\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059");
+    }
+    const c = getCryptoObj();
+    if (!c) throw new InsecureRandomError();
+    if (maxExclusive === 1) return 0;
+    const limit = Math.floor(4294967296 / maxExclusive) * maxExclusive;
+    const buf = new Uint32Array(1);
+    for (let attempt = 0; attempt < 1e3; attempt += 1) {
+      c.getRandomValues(buf);
+      if (buf[0] < limit) return buf[0] % maxExclusive;
+    }
+    throw new InsecureRandomError();
+  }
+  function secureHexUpper(length) {
+    const c = getCryptoObj();
+    if (!c) throw new InsecureRandomError();
+    const bytes = new Uint8Array(Math.ceil(length / 2));
+    c.getRandomValues(bytes);
+    let s = "";
+    for (const b of bytes) s += b.toString(16).padStart(2, "0");
+    return s.slice(0, length).toUpperCase();
+  }
+  function secureToken(bytes = 32) {
+    const c = getCryptoObj();
+    if (!c) throw new InsecureRandomError();
+    const arr = new Uint8Array(bytes);
+    c.getRandomValues(arr);
+    let s = "";
+    for (const b of arr) s += b.toString(16).padStart(2, "0");
+    return s;
+  }
+  return { InsecureRandomError, hasSecureRandom, secureRandomInt, secureHexUpper, secureToken };
+});
 __def("../../shared/rulesets.js", function(__req2) {
   const RULESET = Object.freeze({
     PVP_CURRENT: "pvp_current",
@@ -3591,6 +4034,8 @@ __def("../../shared/rulesets.js", function(__req2) {
 var constants = __req("../../shared/constants.js");
 var profile = __req("../../shared/profile.js");
 var rules = __req("../../shared/rules.js");
+var storyEngine = __req("../../shared/story/engine.js");
+var stages = __req("../../shared/story/stages.js");
 
 // supabase/functions/api/rewards.ts
 function isSettled(match) {
@@ -3968,6 +4413,187 @@ async function socialRoute(store, userId, path, body) {
   }
 }
 
+// supabase/functions/api/story.ts
+var { PLAYER_SEAT, createStoryMatch, applyPlayerAction, runEnemyTurn, storySnapshot, storyOutcome } = storyEngine;
+var fail2 = (code, message) => ({ fail: { code, message } });
+var clone = (value) => structuredClone(value);
+function runView(row) {
+  if (!row) return null;
+  return {
+    runId: row.runId,
+    stageId: row.stageId,
+    status: row.status,
+    revision: row.revision,
+    state: storySnapshot(row.state)
+  };
+}
+async function storyView(store, userId) {
+  const run = await store.latestRun(userId);
+  return { story: runView(run) };
+}
+async function storyRoute(store, userId, path, body) {
+  if (path === "/story/run") {
+    return { view: await storyView(store, userId) };
+  }
+  if (path === "/story/begin") return begin(store, userId, body);
+  if (path === "/story/action") return action(store, userId, body);
+  if (path === "/story/abort") return abort(store, userId, body);
+  return null;
+}
+async function begin(store, userId, body) {
+  const stageId = Number(body == null ? void 0 : body.stageId);
+  const requestId = String((body == null ? void 0 : body.requestId) || "");
+  if (!requestId) return fail2("bad_request", "\u64CD\u4F5CID\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+  if (!stages.STAGE_BY_ID[stageId]) return fail2("no_stage", "\u305D\u306E\u30B9\u30C6\u30FC\u30B8\u306F\u3042\u308A\u307E\u305B\u3093\u3002");
+  if (await store.hasLiveMatch(userId)) {
+    return fail2("online_busy", "\u30AA\u30F3\u30E9\u30A4\u30F3\u5BFE\u6226\u306E\u9014\u4E2D\u306F\u3001\u7269\u8A9E\u3092\u59CB\u3081\u3089\u308C\u307E\u305B\u3093\u3002");
+  }
+  const existing = await store.activeRun(userId);
+  if (existing) {
+    return { view: { story: runView(existing) }, result: { resumed: true } };
+  }
+  const { profile: profile2, revision } = await store.loadProfile(userId);
+  const gate = profile.canEnterStage(profile2, stageId);
+  if (!gate.ok) return fail2(gate.code || "locked", gate.message);
+  const runId = `story_${crypto.randomUUID()}`;
+  const draft = clone(profile2);
+  const begun = profile.beginStoryMatch(draft, { stageId, matchId: runId });
+  if (!begun.ok) return fail2(begun.code || "story_rejected", begun.message);
+  const state = createStoryMatch({
+    stageId,
+    matchId: runId,
+    playerName: draft.name || "\u3042\u306A\u305F",
+    charId: draft.lastCharId,
+    cosmetics: profile.appearanceFor(draft, draft.lastCharId)
+  });
+  const committed = await store.commit({
+    userId,
+    runId,
+    expectedRevision: -1,
+    stageId,
+    status: "playing",
+    state,
+    profile: draft,
+    profileRevision: revision,
+    requestId,
+    bodyHash: store.bodyHash("/story/begin", { stageId }),
+    response: { runId, stageId }
+  });
+  if (committed.status === "busy") {
+    const live = await store.activeRun(userId);
+    return { view: { story: runView(live) }, result: { resumed: true } };
+  }
+  if (committed.status === "replay") {
+    const live = await store.activeRun(userId);
+    return { view: { story: runView(live) }, result: { ...committed.response, replay: true } };
+  }
+  if (committed.status !== "committed") return fail2("busy", "\u3044\u307E\u4FDD\u5B58\u304C\u6DF7\u307F\u5408\u3063\u3066\u3044\u307E\u3059\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+  return {
+    view: { story: runView({ runId, stageId, status: "playing", state, revision: 1 }) },
+    result: { runId, stageId }
+  };
+}
+async function action(store, userId, body) {
+  var _a, _b;
+  const runId = String((body == null ? void 0 : body.runId) || "");
+  const requestId = String((body == null ? void 0 : body.requestId) || "");
+  const expected = Number(body == null ? void 0 : body.revision);
+  if (!runId || !requestId) return fail2("bad_request", "\u64CD\u4F5CID\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+  if (!Number.isInteger(expected)) return fail2("bad_request", "\u76E4\u9762\u306E\u7248\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+  const run = await store.findRun(runId);
+  if (!run || run.userId !== userId) return fail2("no_run", "\u305D\u306E\u7269\u8A9E\u306E\u76E4\u9762\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002");
+  if (run.status !== "playing") return fail2("finished", "\u305D\u306E\u6BB5\u306F\u3059\u3067\u306B\u7D42\u308F\u3063\u3066\u3044\u307E\u3059\u3002");
+  if (run.revision !== expected) {
+    return { view: { story: runView(run) }, fail: { code: "stale", message: "\u76E4\u9762\u304C\u66F4\u65B0\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u6700\u65B0\u306E\u76E4\u9762\u3092\u8868\u793A\u3057\u307E\u3057\u305F\u3002" } };
+  }
+  const played = applyPlayerAction(clone(run.state), { ...body.action, seat: PLAYER_SEAT });
+  if (!played.ok) return fail2(played.code || "illegal", played.message || "\u305D\u306E\u64CD\u4F5C\u306F\u884C\u3048\u307E\u305B\u3093\u3002");
+  const events = [played.event].filter(Boolean);
+  let state = played.state;
+  if (state.status === "playing") {
+    const enemy = runEnemyTurn(state, () => store.randomInt(1e6) / 1e6);
+    state = enemy.state;
+    events.push(...enemy.events);
+  }
+  const finished = state.status === "finished";
+  const stage = stages.STAGE_BY_ID[run.stageId];
+  let reward = null;
+  let profileDraft = null;
+  let profileRevision = 0;
+  if (finished) {
+    const outcome = ((_a = storyOutcome(state)) == null ? void 0 : _a.outcome) || "lose";
+    const loaded = await store.loadProfile(userId);
+    profileRevision = loaded.revision;
+    profileDraft = clone(loaded.profile);
+    const before = new Set(profileDraft.story.skills);
+    const granted = profile.grantStoryClear(profileDraft, {
+      stageId: stage.id,
+      outcome,
+      charId: ((_b = state.seats[PLAYER_SEAT - 1]) == null ? void 0 : _b.charId) || null,
+      randomInt: (n) => store.randomInt(n)
+    });
+    if (!granted.ok) return fail2(granted.code || "story_rejected", granted.message);
+    const learned = profileDraft.story.skills.find((id) => !before.has(id)) || null;
+    profile.endStoryMatch(profileDraft, runId);
+    reward = { ...granted.result, skill: learned, outcome };
+  }
+  const committed = await store.commit({
+    userId,
+    runId,
+    expectedRevision: run.revision,
+    stageId: run.stageId,
+    status: finished ? "finished" : "playing",
+    state,
+    profile: profileDraft,
+    profileRevision,
+    requestId,
+    bodyHash: store.bodyHash("/story/action", { runId, revision: expected, action: body.action }),
+    response: { reward, finished }
+  });
+  if (committed.status === "replay") {
+    const live = await store.findRun(runId);
+    return { view: { story: runView(live) }, result: { ...committed.response, replay: true } };
+  }
+  if (committed.status === "stale") {
+    const live = await store.findRun(runId);
+    return { view: { story: runView(live) }, fail: { code: "stale", message: "\u76E4\u9762\u304C\u66F4\u65B0\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u6700\u65B0\u306E\u76E4\u9762\u3092\u8868\u793A\u3057\u307E\u3057\u305F\u3002" } };
+  }
+  if (committed.status !== "committed") return fail2("busy", "\u3044\u307E\u4FDD\u5B58\u304C\u6DF7\u307F\u5408\u3063\u3066\u3044\u307E\u3059\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+  return {
+    view: { story: runView({ runId, stageId: run.stageId, status: finished ? "finished" : "playing", state, revision: run.revision + 1 }) },
+    result: { events, reward, finished }
+  };
+}
+async function abort(store, userId, body) {
+  const runId = String((body == null ? void 0 : body.runId) || "");
+  const requestId = String((body == null ? void 0 : body.requestId) || "");
+  if (!runId || !requestId) return fail2("bad_request", "\u64CD\u4F5CID\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+  const run = await store.findRun(runId);
+  if (!run || run.userId !== userId) return fail2("no_run", "\u305D\u306E\u7269\u8A9E\u306E\u76E4\u9762\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002");
+  if (run.status !== "playing") return { view: { story: null }, result: { aborted: true } };
+  const loaded = await store.loadProfile(userId);
+  const draft = clone(loaded.profile);
+  const granted = profile.grantStoryClear(draft, { stageId: run.stageId, outcome: "aborted" });
+  if (!granted.ok) return fail2(granted.code || "story_rejected", granted.message);
+  profile.endStoryMatch(draft, runId);
+  const committed = await store.commit({
+    userId,
+    runId,
+    expectedRevision: run.revision,
+    stageId: run.stageId,
+    status: "aborted",
+    state: run.state,
+    profile: draft,
+    profileRevision: loaded.revision,
+    requestId,
+    bodyHash: store.bodyHash("/story/abort", { runId }),
+    response: { aborted: true }
+  });
+  if (committed.status === "replay") return { view: { story: null }, result: { aborted: true, replay: true } };
+  if (committed.status !== "committed") return fail2("busy", "\u3044\u307E\u4FDD\u5B58\u304C\u6DF7\u307F\u5408\u3063\u3066\u3044\u307E\u3059\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+  return { view: { story: null }, result: { aborted: true } };
+}
+
 // supabase/functions/api/index.ts
 var cors = {
   "access-control-allow-origin": "*",
@@ -3978,9 +4604,9 @@ var json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { ...cors, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
 });
-var fail2 = (code, message, view, status = 400) => json({ ok: false, code, message, view }, status);
+var fail3 = (code, message, view, status = 400) => json({ ok: false, code, message, view }, status);
 var success = (view, extra = {}) => json({ ok: true, view, ...extra });
-var clone = (value) => structuredClone(value);
+var clone2 = (value) => structuredClone(value);
 var cleanName = (value) => String(value ?? "").replace(/[<>&"'`\\]/g, "").trim().slice(0, 16);
 var requestHash = (path, body) => profile.bodyHash({ path, body });
 var randomHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (x) => x.toString(16).padStart(2, "0")).join("").toUpperCase();
@@ -4028,7 +4654,71 @@ async function viewOf(db, userId, knownProfile) {
   const loaded = knownProfile ? { profile: knownProfile } : await loadProfile(db, userId);
   const room = await findRoom(db, userId);
   const match = await findMatch(db, room);
-  return { profile: loaded.profile, room: room ? publicRoom(room) : null, match: match ? matchView(match, userId) : null, queue: null };
+  const story = await storyView(createStoryStore(db), userId);
+  return {
+    profile: loaded.profile,
+    room: room ? publicRoom(room) : null,
+    match: match ? matchView(match, userId) : null,
+    queue: null,
+    ...story
+  };
+}
+function storyRowOf(row) {
+  var _a;
+  if (!row) return null;
+  return {
+    runId: row.run_id,
+    userId: row.user_id,
+    stageId: Number(row.stage_id),
+    status: row.status,
+    state: ((_a = row.data) == null ? void 0 : _a.state) ?? row.data,
+    revision: Number(row.revision || 0)
+  };
+}
+function createStoryStore(db) {
+  return {
+    loadProfile: (userId) => loadProfile(db, userId),
+    async activeRun(userId) {
+      const { data, error } = await db.from("triad_story_runs").select("run_id,user_id,stage_id,status,data,revision").eq("user_id", userId).eq("status", "playing").maybeSingle();
+      if (error) throw error;
+      return storyRowOf(data);
+    },
+    async latestRun(userId) {
+      const { data, error } = await db.from("triad_story_runs").select("run_id,user_id,stage_id,status,data,revision").eq("user_id", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+      if (error) throw error;
+      return storyRowOf(data);
+    },
+    async findRun(runId) {
+      const { data, error } = await db.from("triad_story_runs").select("run_id,user_id,stage_id,status,data,revision").eq("run_id", runId).maybeSingle();
+      if (error) throw error;
+      return storyRowOf(data);
+    },
+    async commit(input) {
+      const { data, error } = await db.rpc("triad_commit_story_run", {
+        p_user_id: input.userId,
+        p_run_id: input.runId,
+        p_expected_revision: input.expectedRevision,
+        p_stage_id: input.stageId,
+        p_status: input.status,
+        p_run_data: { state: input.state },
+        p_profile_data: input.profile,
+        p_profile_revision: input.profileRevision,
+        p_request_id: input.requestId,
+        p_body_hash: input.bodyHash,
+        p_response: input.response
+      });
+      if (error) throw error;
+      const row = data == null ? void 0 : data[0];
+      return { status: (row == null ? void 0 : row.status) || "busy", response: (row == null ? void 0 : row.response) ?? null };
+    },
+    async hasLiveMatch(userId) {
+      var _a;
+      const match = await findMatch(db, await findRoom(db, userId));
+      return !!match && ((_a = match.state) == null ? void 0 : _a.status) === "playing";
+    },
+    randomInt: (max) => crypto.getRandomValues(new Uint32Array(1))[0] % Math.max(1, Math.floor(max)),
+    bodyHash: (path, body) => requestHash(path, body)
+  };
 }
 function matchView(match, userId) {
   const seat = (match.seatSnapshot || []).find((s) => s.userId === userId);
@@ -4041,7 +4731,7 @@ function matchView(match, userId) {
   };
 }
 function publicRoom(room) {
-  const copy = clone(room);
+  const copy = clone2(room);
   delete copy.memberIds;
   delete copy._revision;
   return copy;
@@ -4067,7 +4757,7 @@ async function settleMatchRewards(db, match, onlyUserId) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const current = await loadProfile(db, reward.userId);
       if ((_a = current.profile.rewardedMatches) == null ? void 0 : _a[match.matchId]) break;
-      const draft = clone(current.profile);
+      const draft = clone2(current.profile);
       const granted = profile.grantMatchReward(draft, {
         matchId: match.matchId,
         outcome: reward.outcome,
@@ -4257,20 +4947,20 @@ function createSocialStore(db) {
 }
 async function mutateProfile(ctx, path, body, mutator) {
   const requestId = String(body.requestId || "").slice(0, 128);
-  if (!requestId) return { error: fail2("request_id_required", "\u64CD\u4F5CID\u304C\u3042\u308A\u307E\u305B\u3093\u3002") };
+  if (!requestId) return { error: fail3("request_id_required", "\u64CD\u4F5CID\u304C\u3042\u308A\u307E\u305B\u3093\u3002") };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const current = await loadProfile(ctx.db, ctx.user.id);
-    const draft = clone(current.profile);
+    const draft = clone2(current.profile);
     const result = mutator(draft);
-    if (!(result == null ? void 0 : result.ok)) return { error: fail2((result == null ? void 0 : result.code) || "rejected", (result == null ? void 0 : result.message) || "\u64CD\u4F5C\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F.", await viewOf(ctx.db, ctx.user.id, current.profile)) };
+    if (!(result == null ? void 0 : result.ok)) return { error: fail3((result == null ? void 0 : result.code) || "rejected", (result == null ? void 0 : result.message) || "\u64CD\u4F5C\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F.", await viewOf(ctx.db, ctx.user.id, current.profile)) };
     const response = { result: result.result ?? null, replay: false, processed: false };
     const committed = await commitProfile(ctx.db, ctx.user.id, current.revision, draft, requestId, requestHash(path, { ...body, requestId: void 0 }), response);
     if ((committed == null ? void 0 : committed.status) === "stale") continue;
-    if ((committed == null ? void 0 : committed.status) === "conflict") return { error: fail2("request_conflict", "\u540C\u3058\u64CD\u4F5CID\u3067\u7570\u306A\u308B\u8981\u6C42\u304C\u5C4A\u304D\u307E\u3057\u305F\u3002") };
+    if ((committed == null ? void 0 : committed.status) === "conflict") return { error: fail3("request_conflict", "\u540C\u3058\u64CD\u4F5CID\u3067\u7570\u306A\u308B\u8981\u6C42\u304C\u5C4A\u304D\u307E\u3057\u305F\u3002") };
     if ((committed == null ? void 0 : committed.status) === "replay") return { profile: current.profile, ...committed.response, replay: true };
     return { profile: draft, ...response };
   }
-  return { error: fail2("busy", "\u540C\u6642\u66F4\u65B0\u3092\u51E6\u7406\u4E2D\u3067\u3059\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002") };
+  return { error: fail3("busy", "\u540C\u6642\u66F4\u65B0\u3092\u51E6\u7406\u4E2D\u3067\u3059\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002") };
 }
 async function saveRoom(db, room) {
   room.memberIds = room.members.map((m) => m.playerId);
@@ -4286,9 +4976,15 @@ async function route(ctx, path, body) {
   await ensureIdentity(ctx.db, userId);
   const social = await socialRoute(createSocialStore(ctx.db), userId, path, body);
   if (social) {
-    if ("fail" in social) return fail2(social.fail.code, social.fail.message, await viewOf(ctx.db, userId));
+    if ("fail" in social) return fail3(social.fail.code, social.fail.message, await viewOf(ctx.db, userId));
     const view = { ...await viewOf(ctx.db, userId), ...social.view || {} };
     return success(view, social.result === void 0 ? {} : { result: social.result });
+  }
+  const story = await storyRoute(createStoryStore(ctx.db), userId, path, body);
+  if (story) {
+    const view = { ...await viewOf(ctx.db, userId), ...story.view || {} };
+    if ("fail" in story && story.fail) return fail3(story.fail.code, story.fail.message, view);
+    return success(view, story.result === void 0 ? {} : { result: story.result });
   }
   if (path === "/me" || path === "/world/poll") {
     const pending = await findMatch(ctx.db, await findRoom(ctx.db, userId));
@@ -4297,7 +4993,7 @@ async function route(ctx, path, body) {
   }
   if (path === "/name") {
     const name = cleanName(body.name);
-    if (!name) return fail2("bad_name", "\u540D\u524D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+    if (!name) return fail3("bad_name", "\u540D\u524D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
     const out = await mutateProfile(ctx, path, body, (draft) => {
       draft.name = name;
       return { ok: true, result: { name } };
@@ -4330,8 +5026,8 @@ async function route(ctx, path, body) {
     return success(await viewOf(ctx.db, userId, out.profile), { result: out.result, replay: out.replay });
   }
   if (path === "/room/create" || path === "/world/join") {
-    if (!constants.CHARACTER_BY_ID[body.charId]) return fail2("bad_char", "\u305D\u306E\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u306F\u5B58\u5728\u3057\u307E\u305B\u3093\u3002");
-    if (await findRoom(ctx.db, userId)) return fail2("already_in_room", "\u3059\u3067\u306B\u30EB\u30FC\u30E0\u3078\u53C2\u52A0\u3057\u3066\u3044\u307E\u3059\u3002");
+    if (!constants.CHARACTER_BY_ID[body.charId]) return fail3("bad_char", "\u305D\u306E\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u306F\u5B58\u5728\u3057\u307E\u305B\u3093\u3002");
+    if (await findRoom(ctx.db, userId)) return fail3("already_in_room", "\u3059\u3067\u306B\u30EB\u30FC\u30E0\u3078\u53C2\u52A0\u3057\u3066\u3044\u307E\u3059\u3002");
     const p = (await loadProfile(ctx.db, userId)).profile;
     if (path === "/world/join") {
       const { data: candidates } = await ctx.db.from("triad_rooms").select("data,revision").contains("data", { visibility: "public", status: "lobby" }).limit(20);
@@ -4360,25 +5056,25 @@ async function route(ctx, path, body) {
       } catch {
       }
     }
-    return fail2("no_code", "\u30EB\u30FC\u30E0\u3092\u4F5C\u6210\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002");
+    return fail3("no_code", "\u30EB\u30FC\u30E0\u3092\u4F5C\u6210\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002");
   }
   if (path === "/room/join") {
     const code = String(body.code || "").trim().toUpperCase();
-    if (!/^[0-9A-F]{6}$/.test(code)) return fail2("bad_code", "\u30EB\u30FC\u30E0\u30B3\u30FC\u30C9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
-    if (!constants.CHARACTER_BY_ID[body.charId]) return fail2("bad_char", "\u305D\u306E\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u306F\u5B58\u5728\u3057\u307E\u305B\u3093\u3002");
+    if (!/^[0-9A-F]{6}$/.test(code)) return fail3("bad_code", "\u30EB\u30FC\u30E0\u30B3\u30FC\u30C9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
+    if (!constants.CHARACTER_BY_ID[body.charId]) return fail3("bad_char", "\u305D\u306E\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u306F\u5B58\u5728\u3057\u307E\u305B\u3093\u3002");
     const { data } = await ctx.db.from("triad_rooms").select("data,revision").eq("code", code).maybeSingle();
-    if (!data) return fail2("no_room", "\u305D\u306E\u30EB\u30FC\u30E0\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002");
+    if (!data) return fail3("no_room", "\u305D\u306E\u30EB\u30FC\u30E0\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002");
     const room2 = { ...data.data, _revision: Number(data.revision) };
-    if (room2.status !== "lobby" || room2.members.length >= 3) return fail2("full", "\u305D\u306E\u30EB\u30FC\u30E0\u306B\u306F\u53C2\u52A0\u3067\u304D\u307E\u305B\u3093\u3002");
+    if (room2.status !== "lobby" || room2.members.length >= 3) return fail3("full", "\u305D\u306E\u30EB\u30FC\u30E0\u306B\u306F\u53C2\u52A0\u3067\u304D\u307E\u305B\u3093\u3002");
     const p = (await loadProfile(ctx.db, userId)).profile;
     if (!room2.members.some((m) => m.playerId === userId)) room2.members.push({ playerId: userId, name: p.name, charId: body.charId, ready: false });
     await saveRoom(ctx.db, room2);
     return success(await viewOf(ctx.db, userId), { result: { code } });
   }
   const room = await findRoom(ctx.db, userId);
-  if (path.startsWith("/room/") && !room) return fail2("no_room", "\u30EB\u30FC\u30E0\u306B\u53C2\u52A0\u3057\u3066\u3044\u307E\u305B\u3093\u3002");
+  if (path.startsWith("/room/") && !room) return fail3("no_room", "\u30EB\u30FC\u30E0\u306B\u53C2\u52A0\u3057\u3066\u3044\u307E\u305B\u3093\u3002");
   if (path === "/room/char") {
-    if (!constants.CHARACTER_BY_ID[body.charId]) return fail2("bad_char", "\u305D\u306E\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u306F\u5B58\u5728\u3057\u307E\u305B\u3093\u3002");
+    if (!constants.CHARACTER_BY_ID[body.charId]) return fail3("bad_char", "\u305D\u306E\u30AD\u30E3\u30E9\u30AF\u30BF\u30FC\u306F\u5B58\u5728\u3057\u307E\u305B\u3093\u3002");
     room.members = room.members.map((m) => m.playerId === userId ? { ...m, charId: body.charId, ready: false } : m);
     await saveRoom(ctx.db, room);
     return success(await viewOf(ctx.db, userId));
@@ -4400,8 +5096,8 @@ async function route(ctx, path, body) {
     return success(await viewOf(ctx.db, userId));
   }
   if (path === "/room/start") {
-    if (room.hostId !== userId) return fail2("not_host", "\u958B\u59CB\u3067\u304D\u308B\u306E\u306F\u30DB\u30B9\u30C8\u3060\u3051\u3067\u3059\u3002");
-    if (room.members.length !== 3 || !room.members.every((m) => m.ready)) return fail2("not_ready", "3\u4EBA\u5168\u54E1\u306E\u6E96\u5099\u304C\u5FC5\u8981\u3067\u3059\u3002");
+    if (room.hostId !== userId) return fail3("not_host", "\u958B\u59CB\u3067\u304D\u308B\u306E\u306F\u30DB\u30B9\u30C8\u3060\u3051\u3067\u3059\u3002");
+    if (room.members.length !== 3 || !room.members.every((m) => m.ready)) return fail3("not_ready", "3\u4EBA\u5168\u54E1\u306E\u6E96\u5099\u304C\u5FC5\u8981\u3067\u3059\u3002");
     const matchId = `m_${randomHex(8).toLowerCase()}`;
     const seats = room.members.map((m, i) => ({ seat: i + 1, name: m.name, charId: m.charId, kind: "human", userId: m.playerId }));
     const state = rules.createMatch({ matchId, mode: "online", seats, startSeat: rules.pickStartSeat() });
@@ -4415,12 +5111,12 @@ async function route(ctx, path, body) {
   }
   if (path === "/match/action") {
     const match = await findMatch(ctx.db, room);
-    if (!match || match.matchId !== body.matchId) return fail2("no_match", "\u305D\u306E\u5BFE\u6226\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002");
+    if (!match || match.matchId !== body.matchId) return fail3("no_match", "\u305D\u306E\u5BFE\u6226\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002");
     const seat = match.seatSnapshot.find((s) => s.userId === userId);
-    if (!seat || match.state.turn !== seat.seat) return fail2("not_your_turn", "\u3044\u307E\u306F\u3042\u306A\u305F\u306E\u624B\u756A\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002");
-    if (Number(body.revision) !== match.revision) return fail2("stale_revision", "\u76E4\u9762\u304C\u66F4\u65B0\u3055\u308C\u3066\u3044\u307E\u3059\u3002");
+    if (!seat || match.state.turn !== seat.seat) return fail3("not_your_turn", "\u3044\u307E\u306F\u3042\u306A\u305F\u306E\u624B\u756A\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002");
+    if (Number(body.revision) !== match.revision) return fail3("stale_revision", "\u76E4\u9762\u304C\u66F4\u65B0\u3055\u308C\u3066\u3044\u307E\u3059\u3002");
     const applied = rules.applyAction(match.state, { ...body.action, seat: seat.seat });
-    if (!applied.ok) return fail2(applied.code, applied.message);
+    if (!applied.ok) return fail3(applied.code, applied.message);
     const next = { ...match, state: applied.state, status: applied.state.status };
     const finished = isSettled(next);
     if (finished && !Array.isArray(next.rewards)) next.rewards = rewardsForMatch(next);
@@ -4436,25 +5132,25 @@ async function route(ctx, path, body) {
     });
     if (error) throw error;
     const committed = data == null ? void 0 : data[0];
-    if ((committed == null ? void 0 : committed.status) === "stale") return fail2("stale_revision", "\u76E4\u9762\u304C\u66F4\u65B0\u3055\u308C\u3066\u3044\u307E\u3059\u3002");
-    if ((committed == null ? void 0 : committed.status) === "conflict") return fail2("request_conflict", "\u540C\u3058\u64CD\u4F5CID\u3067\u7570\u306A\u308B\u8981\u6C42\u304C\u5C4A\u304D\u307E\u3057\u305F\u3002");
+    if ((committed == null ? void 0 : committed.status) === "stale") return fail3("stale_revision", "\u76E4\u9762\u304C\u66F4\u65B0\u3055\u308C\u3066\u3044\u307E\u3059\u3002");
+    if ((committed == null ? void 0 : committed.status) === "conflict") return fail3("request_conflict", "\u540C\u3058\u64CD\u4F5CID\u3067\u7570\u306A\u308B\u8981\u6C42\u304C\u5C4A\u304D\u307E\u3057\u305F\u3002");
     if (finished) await settleMatchRewards(ctx.db, next);
     return success(await viewOf(ctx.db, userId), { ...response, replay: (committed == null ? void 0 : committed.status) === "replay" });
   }
   if (path === "/ranking") return success(await viewOf(ctx.db, userId), { ranking: [] });
-  return fail2("not_found", "\u305D\u306E\u64CD\u4F5C\u306F\u3042\u308A\u307E\u305B\u3093\u3002", await viewOf(ctx.db, userId), 404);
+  return fail3("not_found", "\u305D\u306E\u64CD\u4F5C\u306F\u3042\u308A\u307E\u305B\u3093\u3002", await viewOf(ctx.db, userId), 404);
 }
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-  if (req.method !== "POST") return fail2("method_not_allowed", "POST\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002", void 0, 405);
+  if (req.method !== "POST") return fail3("method_not_allowed", "POST\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002", void 0, 405);
   try {
     const ctx = await context(req);
-    if (!ctx) return fail2("unauthorized", "\u8A8D\u8A3C\u304C\u5FC5\u8981\u3067\u3059\u3002", void 0, 401);
+    if (!ctx) return fail3("unauthorized", "\u8A8D\u8A3C\u304C\u5FC5\u8981\u3067\u3059\u3002", void 0, 401);
     const body = await req.json().catch(() => ({}));
     const path = new URL(req.url).pathname.replace(/^.*\/api(?=\/|$)/, "") || "/me";
     return await route(ctx, path, body);
   } catch (error) {
     console.error(error);
-    return fail2("server_error", "\u30B5\u30FC\u30D0\u30FC\u51E6\u7406\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002", void 0, 500);
+    return fail3("server_error", "\u30B5\u30FC\u30D0\u30FC\u51E6\u7406\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002", void 0, 500);
   }
 });

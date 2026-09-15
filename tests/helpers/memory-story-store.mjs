@@ -15,6 +15,8 @@ export function createMemoryStoryStore(seed = {}) {
   let liveMatch = !!seed.liveMatch;
   /** 抽選は試験の間ずっと同じ結果になるようにする */
   let rolls = seed.rolls ? [...seed.rolls] : null;
+  /** 書き込み順（直近の run を選ぶのに使う） */
+  let seq = 0;
 
   for (const [userId, profile] of Object.entries(seed.profiles || {})) {
     profiles.set(userId, { profile, revision: seed.revisions?.[userId] ?? 0 });
@@ -34,6 +36,14 @@ export function createMemoryStoryStore(seed = {}) {
         if (row.userId === userId && row.status === 'playing') return clone(row);
       }
       return null;
+    },
+    async latestRun(userId) {
+      let latest = null;
+      for (const row of runs.values()) {
+        if (row.userId !== userId) continue;
+        if (!latest || row.at >= latest.at) latest = row;
+      }
+      return latest ? clone(latest) : null;
     },
     async findRun(runId) {
       const row = runs.get(runId);
@@ -55,6 +65,7 @@ export function createMemoryStoryStore(seed = {}) {
           status: input.status,
           state: clone(input.state),
           revision: 1,
+          at: ++seq,
         });
       } else {
         const row = runs.get(input.runId);
@@ -64,6 +75,7 @@ export function createMemoryStoryStore(seed = {}) {
         row.status = input.status;
         row.stageId = input.stageId;
         row.revision += 1;
+        row.at = ++seq;
       }
       if (input.profile) {
         const rec = profiles.get(input.userId) || { profile: null, revision: 0 };

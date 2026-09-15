@@ -806,7 +806,13 @@ const ctx = {
    * 物語の保存先を持つのはアカウント接続だけ。サーバー版・Supabase 版には
    * 物語の窓口が無いため、オンライン中でもこの端末の保存で進める（資産は混ぜない）。
    */
-  get storyOnline() { return app.mode === 'ONLINE' && app.onlineKind === 'account'; },
+  get storyOnline() { return app.mode === 'ONLINE' && (app.onlineKind === 'account' || app.onlineKind === 'supabase'); },
+  /**
+   * 物語をサーバーが進めるか。
+   * Supabase では盤面・合法手・勝敗・褒美のすべてをサーバーが決める（§16〜§17）。
+   * アカウント接続では進行と褒美だけがオンラインで、盤面はこの端末に残る。
+   */
+  get storyServer() { return app.mode === 'ONLINE' && app.onlineKind === 'supabase'; },
   /** 物語が読むプロフィール。書き込み先と必ず同じものを返す。 */
   storyProfile() {
     if (!ctx.storyOnline) return localStore.profile;
@@ -11930,6 +11936,12 @@ const view = {
   losses: {},
   /** ヒントの段階 0〜3 */
   hintLevel: 0,
+  /**
+   * サーバーで進める物語の、いちばん新しい盤面。
+   * 通信の応答で置き換わる。定期取得（net.view.story）より新しいので、
+   * ある間はこちらを優先する。
+   */
+  run: null,
 };
 
 function resetStoryView() {
@@ -11938,6 +11950,39 @@ function resetStoryView() {
   view.lastResult = null;
   view.lastEvents = [];
   view.hintLevel = 0;
+  view.run = null;
+}
+
+/* ─────────────────── 物語の進め方（どこで決まるか） ─────────────────── */
+
+/**
+ * 'server'  … Supabase。盤面・合法手・勝敗・褒美をサーバーが決める（正式）
+ * 'account' … アカウント接続。進行と褒美はオンライン、盤面はこの端末
+ * 'local'   … この端末の保存だけで進める
+ */
+function backendOf(ctx) {
+  if (ctx.app.mode !== 'ONLINE') return 'local';
+  if (ctx.onlineKind === 'supabase') return 'server';
+  if (ctx.onlineKind === 'account') return 'account';
+  return 'local';
+}
+
+/**
+ * いま開いている物語の盤面。どの進め方でも同じ形（run）で返す。
+ *   { runId, stageId, status, revision, state }
+ */
+function heldRun(ctx) {
+  if (backendOf(ctx) === 'server') return view.run || ctx.net.view?.story || null;
+  const rec = ctx.localStore.storyMatch;
+  if (!rec?.state) return null;
+  return {
+    runId: rec.state.matchId,
+    stageId: rec.state.story?.stageId,
+    status: rec.state.status,
+    revision: 0,
+    state: rec.state,
+    save: saveKindOf(rec),
+  };
 }
 
 /* ───────────────────────── 入口 ───────────────────────── */
@@ -11952,30 +11997,34 @@ function renderStory(root, ctx) {
     return;
   }
 
-  // 決着済みの盤が残っていて、一覧へ戻ってきたら片付ける
-  const held = ctx.localStore.storyMatch;
-  if (held && held.state.status !== 'playing' && view.screen === 'map') {
-    const cleared = ctx.localStore.clearStoryMatch();
-    if (!cleared.ok) {
-      root.appendChild(el('div', { class: 'notice error', text: cleared.message || '前回の物語盤面を整理できませんでした。' }));
-      return;
+  // 端末に置いた盤の片付けと取り違え防止。サーバーで進めるときは端末に盤を持たない。
+  if (backendOf(ctx) !== 'server') {
+    // 決着済みの盤が残っていて、一覧へ戻ってきたら片付ける
+    const held = ctx.localStore.storyMatch;
+    if (held && held.state.status !== 'playing' && view.screen === 'map') {
+      const cleared = ctx.localStore.clearStoryMatch();
+      if (!cleared.ok) {
+        root.appendChild(el('div', { class: 'notice error', text: cleared.message || '前回の物語盤面を整理できませんでした。' }));
+        return;
+      }
+    }
+    // 別の保存先で始めた途中の盤は、そのままでは続けられない（褒美の行き先が変わるため）
+    const other = ctx.localStore.storyMatch;
+    if (other?.state.status === 'playing' && saveKindOf(other) !== saveKindOf(null, ctx)) {
+      return renderSaveMismatch(root, ctx, other);
     }
   }
 
-  // 別の保存先で始めた途中の盤は、そのままでは続けられない（褒美の行き先が変わるため）
-  const other = ctx.localStore.storyMatch;
-  if (other?.state.status === 'playing' && saveKindOf(other) !== saveKindOf(null, ctx)) {
-    return renderSaveMismatch(root, ctx, other);
-  }
+  const run = heldRun(ctx);
   // 途中の盤があれば、その段の対戦画面へ戻す（再読み込みしても続きから）
-  if (view.screen === 'map' && ctx.localStore.storyMatch?.state.status === 'playing') {
+  if (view.screen === 'map' && run?.status === 'playing') {
     view.screen = 'match';
-    view.stageId = ctx.localStore.storyMatch.state.story.stageId;
+    view.stageId = run.stageId;
   }
 
   if (view.screen === 'entry') return renderBossShow(root, ctx, 'entry');
   if (view.screen === 'victory') return renderBossShow(root, ctx, 'win');
-  if (view.screen === 'match' && ctx.localStore.storyMatch) return renderStoryMatch(root, ctx);
+  if (view.screen === 'match' && run) return renderStoryMatch(root, ctx, run);
   if (view.screen === 'intro') return renderDialogue(root, ctx, 'intro');
   if (view.screen === 'clear') return renderDialogue(root, ctx, 'clear');
   return renderMap(root, ctx);
@@ -11999,6 +12048,7 @@ function holdBoard(ctx, state) {
 
 /** 保存先を1行で示す（資産が混ざらないことを明示する） */
 function saveLabel(ctx) {
+  if (backendOf(ctx) === 'server') return '物語はサーバーで進みます。盤面も褒美もアカウントに残るので、別の端末でも続きから遊べます。';
   if (ctx.storyOnline) return '進行と褒美はオンラインのアカウントに保存されます（進行中の盤面はこの端末に残ります）。';
   if (ctx.app.mode === 'ONLINE') return 'この接続では、物語はこの端末の保存（LOCAL）で進みます。オンラインの資産とは分かれています。';
   return '進行はこの端末の保存（LOCAL）に残ります。';
@@ -12431,7 +12481,35 @@ async function beginOnline(ctx, { stageId, matchId, onlineMatchId }) {
   return { ok: true, state };
 }
 
+/**
+ * サーバーで段を始める。盤面はサーバーが作り、応答でそのまま受け取る。
+ */
+async function beginOnServer(ctx, stageId) {
+  const r = await ctx.net.post('/api/story/begin', { stageId }, { durable: false });
+  if (!r.ok) return { ok: false, message: r.message || '物語を開始できませんでした。' };
+  const run = r.data?.view?.story || ctx.net.view?.story || null;
+  if (!run) return { ok: false, message: '盤面を受け取れませんでした。' };
+  view.run = run;
+  return { ok: true, state: run.state };
+}
+
 async function startMatchNow(ctx, stageId) {
+  if (backendOf(ctx) === 'server') {
+    const begun = await beginOnServer(ctx, stageId);
+    if (!begun.ok) {
+      audio.playSfx('error');
+      toast(begun.message, 'error');
+      return false;
+    }
+    clearCpuTimer();
+    fx.reset();
+    resetSelection(false);
+    view.screen = 'match';
+    view.stageId = stageId;
+    audio.setTrack('match');
+    ctx.refresh();
+    return true;
+  }
   const onlineMatchId = ctx.app.mode === 'ONLINE' ? (ctx.net.view?.match?.matchId || null) : null;
   const matchId = `story_${newRequestId()}`;
   const saved = ctx.storyOnline
@@ -12459,15 +12537,66 @@ async function startMatchNow(ctx, stageId) {
   return true;
 }
 
-function renderStoryMatch(root, ctx) {
-  const rec = ctx.localStore.storyMatch;
-  const stage = STAGE_BY_ID[rec.state.story.stageId];
-  const session = buildStorySession(ctx, rec, stage);
+function renderStoryMatch(root, ctx, run) {
+  const stage = STAGE_BY_ID[run.stageId ?? run.state.story.stageId];
+  const session = buildStorySession(ctx, run, stage);
   renderMatch(root, ctx, session);
 }
 
-function buildStorySession(ctx, rec, stage) {
+/**
+ * サーバーで進める物語の1手。
+ *
+ * 盤面はサーバーが持つ。こちらは「置きたい場所」を送り、返ってきた盤面を
+ * そのまま表示する。敵の手番は同じ応答の中で解決済みで、events にまとめて
+ * 届くので、演出だけをここで流す。
+ */
+async function submitToServer(ctx, run, stage, action) {
+  const r = await ctx.net.post('/api/story/action', {
+    runId: run.runId, revision: run.revision, action,
+  }, { durable: false });
+  const next = r.data?.view?.story || ctx.net.view?.story || null;
+  if (next) { view.run = next; run.state = next.state; run.revision = next.revision; run.status = next.status; }
+  if (!r.ok) {
+    audio.playSfx('error');
+    toast(r.message || 'その操作は行えませんでした。', 'error');
+    ctx.refresh();
+    return false;
+  }
+  const result = r.data?.result || {};
+  for (const ev of result.events || []) if (ev && (ev.type === 'place' || ev.type === 'skill')) fx.play(ev, null);
+  view.lastEvents = result.events || [];
+  if (result.finished) {
+    clearCpuTimer();
+    view.lastResult = result.reward;
+    const outcome = result.reward?.outcome || 'lose';
+    if (outcome === 'win') view.losses[stage.id] = 0;
+    else view.losses[stage.id] = (view.losses[stage.id] || 0) + 1;
+    view.hintLevel = 0;
+    audio.playSfx(outcome === 'win' ? 'win' : 'lose');
+  }
+  return true;
+}
+
+/** サーバーで進める段をやめる。 */
+async function abortOnServer(ctx, run) {
+  const r = await ctx.net.post('/api/story/abort', { runId: run.runId }, { durable: false });
+  if (!r.ok) {
+    audio.playSfx('error');
+    toast(r.message || '中止をサーバーへ伝えられませんでした。', 'error');
+    ctx.refresh();
+    return false;
+  }
+  view.run = null;
+  clearCpuTimer();
+  resetStoryView();
+  ctx.refresh();
+  return true;
+}
+
+function buildStorySession(ctx, run, stage) {
   const p = ctx.storyProfile();
+  const server = backendOf(ctx) === 'server';
+  const rec = run;
   const training = TRAINING_BOARD_BY_STAGE[stage.id];
   return {
     kind: 'story',
@@ -12481,6 +12610,7 @@ function buildStorySession(ctx, rec, stage) {
     renderTop() { return storyTopCard(ctx, rec.state, stage, training); },
 
     async submit(action) {
+      if (server) return submitToServer(ctx, rec, stage, action);
       const res = applyPlayerAction(rec.state, action);
       if (!res.ok) { audio.playSfx('error'); toast(res.message, 'error'); return false; }
       const saved = res.state.status === 'finished'
@@ -12500,6 +12630,8 @@ function buildStorySession(ctx, rec, stage) {
 
     /** 敵の手番（予告の解決とボスの段階変化を含む） */
     async runAuto() {
+      // サーバーで進める場合、敵の手番は着手の応答の中で解決済み。
+      if (server) return;
       const live = ctx.localStore.storyMatch?.state;
       if (!live || live.status !== 'playing' || live.turn !== ENEMY_SEAT) return;
       const out = runEnemyTurn(live);
@@ -12524,6 +12656,7 @@ function buildStorySession(ctx, rec, stage) {
         confirmLabel: 'やめる', cancelLabel: '続ける', danger: true,
       });
       if (!yes) return;
+      if (server) return abortOnServer(ctx, rec);
       const saved = ctx.storyOnline
         ? await abortOnline(ctx, rec.state, stage)
         : ctx.localStore.transaction((draft) => {
@@ -12652,6 +12785,13 @@ function storyResultCard(ctx, state, stage) {
 }
 
 function leaveStoryResult(ctx) {
+  if (backendOf(ctx) === 'server') {
+    // 決着した run はサーバーに残るが、一覧へ戻った時点で見るのをやめる。
+    view.run = null;
+    resetStoryView();
+    ctx.refresh();
+    return true;
+  }
   const cleared = ctx.localStore.clearStoryMatch();
   if (!cleared.ok) {
     audio.playSfx('error');

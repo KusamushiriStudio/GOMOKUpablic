@@ -106,6 +106,13 @@ function createStoryStore(db: any): StoryStore {
       if (error) throw error;
       return storyRowOf(data);
     },
+    async latestRun(userId: string) {
+      const { data, error } = await db.from('triad_story_runs')
+        .select('run_id,user_id,stage_id,status,data,revision')
+        .eq('user_id', userId).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      if (error) throw error;
+      return storyRowOf(data);
+    },
     async findRun(runId: string) {
       const { data, error } = await db.from('triad_story_runs')
         .select('run_id,user_id,stage_id,status,data,revision')
