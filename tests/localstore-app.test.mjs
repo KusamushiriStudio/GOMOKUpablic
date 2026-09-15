@@ -848,7 +848,7 @@ test('story start, action, and clear reward are atomic with persistence', async 
     ctx.refresh = () => {};
     const storyView = requireModule('views/story.js');
     const { STAGE_BY_ID } = requireModule('../../shared/story/stages.js');
-    assert.equal(storyView.startMatchNow(ctx, 1), true);
+    assert.equal(await storyView.startMatchNow(ctx, 1), true);
 
     const beforeAction = clone({ profile: localStore.profile, storyMatch: localStore.storyMatch });
     const session = storyView.buildStorySession(ctx, localStore.storyMatch, STAGE_BY_ID[1]);
@@ -862,7 +862,7 @@ test('story start, action, and clear reward are atomic with persistence', async 
     const finished = clone(localStore.storyMatch.state);
     finished.status = 'finished';
     finished.result = { kind: 'win', winner: 1, winners: [1], line: [0, 1, 2, 3, 4], reason: 'five' };
-    const rewarded = storyView.finishStory(ctx, finished, STAGE_BY_ID[1]);
+    const rewarded = await storyView.finishStory(ctx, finished, STAGE_BY_ID[1]);
     assert.equal(rewarded.ok, false);
     assertUnchanged({ profile: localStore.profile, storyMatch: localStore.storyMatch }, beforeAction,
       '物語の終了盤面・解放・報酬をまとめてrollbackする');
@@ -881,7 +881,7 @@ test('story cannot begin in memory when the initial save fails', async () => {
     const storyView = requireModule('views/story.js');
     const before = clone(localStore.profile);
 
-    assert.equal(storyView.startMatchNow(ctx, 1), false);
+    assert.equal(await storyView.startMatchNow(ctx, 1), false);
     assert.equal(localStore.storyMatch, null);
     assertUnchanged(localStore.profile, before, 'activeMatchIdも保存成功前に変更しない');
   });
@@ -1097,5 +1097,82 @@ test('オンラインの資産を見ているあいだ、端末に残った対�
     app.mode = 'LOCAL';
     ctx.refresh();
     assert.equal(atEntrance(), false, 'ローカル表示に切り替えたときだけ、保存された対戦を開く');
+  });
+});
+/** アカウント接続のオンライン表示を作る。物語の通信は記録するだけにする。 */
+function onlineAccount(triad, { profile }) {
+  const posts = [];
+  triad.app.mode = 'ONLINE';
+  triad.app.onlineKind = 'account';
+  triad.dbNet.view = { profile };
+  triad.dbNet.post = async (path, body) => {
+    posts.push({ path, body });
+    if (path === '/api/story/finish') {
+      return { ok: true, status: 'ok', data: { result: { story: { perica: 12, playerXp: 60, charXp: 40, first: true, drops: [], duplicate: null, seal: null, skill: null }, replay: false } } };
+    }
+    return { ok: true, status: 'ok', data: { result: {} } };
+  };
+  return posts;
+}
+
+test('オンライン（アカウント接続）の物語は進行をオンラインへ書き、端末の資産を変えない', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    const { ctx, localStore } = triad;
+    ctx.refresh = () => {};
+    const storyView = requireModule('views/story.js');
+    const online = createProfile({ id: 'p_online', name: '旅人' });
+    const posts = onlineAccount(triad, { profile: online });
+    const beforeLocal = clone(localStore.profile);
+
+    assert.equal(await storyView.startMatchNow(ctx, 1), true);
+    assert.deepEqual(posts.map((p) => p.path), ['/api/story/begin']);
+    assert.equal(posts[0].body.stageId, 1);
+    assert.equal(localStore.storyMatch.save, 'online', 'どの保存で始めた盤かを残す');
+    assertUnchanged(localStore.profile, beforeLocal, '端末の資産は物語で変わらない');
+
+    const finished = clone(localStore.storyMatch.state);
+    finished.status = 'finished';
+    finished.result = { kind: 'win', winner: 1, winners: [1], line: [0, 1, 2, 3, 4], reason: 'five' };
+    const rewarded = await storyView.finishStory(ctx, finished, STAGE_BY_ID[1]);
+
+    assert.equal(rewarded.ok, true);
+    assert.equal(posts[1].path, '/api/story/finish');
+    assert.equal(posts[1].body.matchId, finished.matchId);
+    assert.equal(posts[1].body.outcome, 'win');
+    assert.equal(storyView.storyViewState.lastResult.perica, 12, '褒美はオンラインの返答をそのまま出す');
+    assertUnchanged(localStore.profile, beforeLocal, '褒美も端末の資産には入らない');
+  });
+});
+
+test('保存先が変わったまま残った物語の盤面は、破棄するまで続けられない', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    const { ctx, localStore } = triad;
+    const storyView = requireModule('views/story.js');
+    const online = createProfile({ id: 'p_online', name: '旅人' });
+    onlineAccount(triad, { profile: online });
+    const refresh = ctx.refresh;
+    ctx.refresh = () => {};
+    assert.equal(await storyView.startMatchNow(ctx, 1), true);
+
+    // オンラインを抜けた状態で物語を開く（盤面はオンラインで始めたもの）
+    triad.app.mode = 'LOCAL';
+    ctx.refresh = refresh;
+    ctx.setView('story');
+    const root = browser.document.getElementById('view-root');
+    findNode(root, (node) => node.textContent === '進行中の盤面があります');
+    assert.ok(localStore.storyMatch, '勝手に捨てない');
+
+    const discard = triggerNode(findButton(root, 'この盤面を破棄する'), 'click');
+    await confirmOpenDialog(browser.document);
+    await discard;
+    assert.equal(localStore.storyMatch, null);
   });
 });

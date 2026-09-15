@@ -90,3 +90,87 @@ test('DbNet profile mutation is rolled back when shared storage rejects the writ
 
   assert.equal(JSON.stringify(net.profile), before);
 });
+
+/** 物語の通信だけを見るための最小構成（共有ストアへの書き込みは記録するだけ） */
+function storyNet() {
+  const net = new DbNet();
+  net.me = 'player-story';
+  net.profile = createProfile({ id: net.me, name: '旅人' });
+  net.available = true;
+  net.ensure = async () => true;
+  net._publish = () => {};
+  const writes = [];
+  net.db = {
+    doc() {
+      return { async set(value) { writes.push(value); } };
+    },
+  };
+  return { net, writes };
+}
+
+test('DbNet story begin records the active match on the shared profile', async () => {
+  const { net, writes } = storyNet();
+
+  const r = await net.post('/api/story/begin', { stageId: 1, matchId: 'story_a' });
+
+  assert.equal(r.ok, true);
+  assert.equal(net.profile.story.activeMatchId, 'story_a');
+  assert.equal(net.profile.story.lastStage, 1);
+  assert.equal(writes.length, 1);
+});
+
+test('DbNet story begin refuses a stage whose previous stage is not cleared', async () => {
+  const { net, writes } = storyNet();
+
+  const r = await net.post('/api/story/begin', { stageId: 3, matchId: 'story_a' });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'locked');
+  assert.equal(net.profile.story.activeMatchId, null);
+  assert.equal(writes.length, 0);
+});
+
+test('DbNet story finish grants the reward once and treats a resend as a replay', async () => {
+  const { net } = storyNet();
+  await net.post('/api/story/begin', { stageId: 1, matchId: 'story_a' });
+  const beforePerica = net.profile.perica;
+
+  const first = await net.post('/api/story/finish', { stageId: 1, matchId: 'story_a', outcome: 'win' });
+  assert.equal(first.ok, true);
+  assert.equal(first.data.result.replay, false);
+  assert.equal(first.data.result.story.cleared, true);
+  const afterPerica = net.profile.perica;
+  assert.ok(afterPerica > beforePerica, '初回の勝利でペリカが増える');
+  assert.equal(net.profile.story.activeMatchId, null);
+
+  const again = await net.post('/api/story/finish', { stageId: 1, matchId: 'story_a', outcome: 'win' });
+  assert.equal(again.ok, true);
+  assert.equal(again.data.result.replay, true);
+  assert.equal(net.profile.perica, afterPerica, '再送では褒美が二重に入らない');
+  assert.equal(Object.keys(net.profile.story.cleared).length, 1);
+});
+
+test('DbNet story abort clears the active match without granting anything', async () => {
+  const { net } = storyNet();
+  await net.post('/api/story/begin', { stageId: 1, matchId: 'story_a' });
+  const beforePerica = net.profile.perica;
+
+  const r = await net.post('/api/story/abort', { stageId: 1, matchId: 'story_a' });
+
+  assert.equal(r.ok, true);
+  assert.equal(net.profile.story.activeMatchId, null);
+  assert.equal(net.profile.perica, beforePerica);
+  assert.deepEqual(net.profile.story.cleared, {});
+});
+
+test('DbNet story talk marks a conversation read once', async () => {
+  const { net, writes } = storyNet();
+
+  const first = await net.post('/api/story/talk', { stageId: 1, kind: 'intro' });
+  const again = await net.post('/api/story/talk', { stageId: 1, kind: 'intro' });
+
+  assert.equal(first.data.result.replay, false);
+  assert.equal(again.data.result.replay, true);
+  assert.equal(net.profile.story.readTalks['1:intro'], true);
+  assert.equal(writes.length, 1, '既読は一度だけ書き込む');
+});

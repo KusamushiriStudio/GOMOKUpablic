@@ -800,6 +800,20 @@ const ctx = {
     if (app.mode === 'ONLINE' && v?.profile) return v.profile;
     return localStore.profile;
   },
+  /**
+   * 物語の進行と褒美をオンラインの資産へ書くか。
+   *
+   * 物語の保存先を持つのはアカウント接続だけ。サーバー版・Supabase 版には
+   * 物語の窓口が無いため、オンライン中でもこの端末の保存で進める（資産は混ぜない）。
+   */
+  get storyOnline() { return app.mode === 'ONLINE' && app.onlineKind === 'account'; },
+  /** 物語が読むプロフィール。書き込み先と必ず同じものを返す。 */
+  storyProfile() {
+    if (!ctx.storyOnline) return localStore.profile;
+    return activeNet().view?.profile || localStore.profile;
+  },
+  /** オンラインの保存を読み込み終えていない（物語の読み書きをまだ始められない） */
+  get storyLoading() { return ctx.storyOnline && !activeNet().view?.profile; },
   /** オンライン対戦の手段がまったく無い状態 */
   get localOnly() { return app.onlineKind === null; },
   enterOnline() {
@@ -5387,7 +5401,7 @@ __def("dbnet.js", function (__req) {
 
 const { ROOM_CAPACITY, ROOM_CODE_LENGTH, DISCONNECT_GRACE_MS, CHARACTER_BY_ID } = __req("../../shared/constants.js");
 const { createMatch, applyAction, publicSnapshot, outcomeForSeat, pickStartSeat } = __req("../../shared/rules.js");
-const { createProfile, normalizeProfile, grantMatchReward, appearanceFor, ownsCharacter, pullGacha, trainCharacter, equipCosmetic, resetEquipToDefault, claimMission, missionProgress, currentOfferRates } = __req("../../shared/profile.js");
+const { createProfile, normalizeProfile, grantMatchReward, appearanceFor, ownsCharacter, pullGacha, trainCharacter, equipCosmetic, resetEquipToDefault, claimMission, missionProgress, currentOfferRates, beginStoryMatch, endStoryMatch, grantStoryClear, markTalkRead, isTalkRead } = __req("../../shared/profile.js");
 const { secureHexUpper, secureRandomInt } = __req("../../shared/rng.js");
 const { newRequestId } = __req("util.js");
 
@@ -5840,6 +5854,10 @@ class DbNet {
         case '/api/equip': return this._equip(payload);
         case '/api/equip/reset': return this._equipReset(payload);
         case '/api/mission/claim': return this._claimMission(payload);
+        case '/api/story/begin': return this._storyBegin(payload);
+        case '/api/story/finish': return this._storyFinish(payload);
+        case '/api/story/abort': return this._storyAbort(payload);
+        case '/api/story/talk': return this._storyTalk(payload);
         default: return fail('not_found', 'その操作はありません。');
       }
     } catch (e) {
@@ -6165,6 +6183,69 @@ class DbNet {
     if (!r.ok) return fail('mission_rejected', r.message);
     this._publish();
     return done({ mission: r.result });
+  }
+
+  /* ───────────────────── 物語（1対1） ─────────────────────
+   *
+   * 盤面そのものは端末に置いたまま、進行と褒美だけを共有プロフィールへ書く。
+   * 同じ試合IDの二重送信で褒美が重ならないよう、いずれも story.activeMatchId と
+   * 照合してから渡す（照合が外れたものは replay として保存しない）。
+   */
+
+  async _storyBegin({ stageId, matchId }) {
+    const r = await this._mutateProfile((draft) => beginStoryMatch(draft, {
+      stageId: Number(stageId), matchId: String(matchId || ''),
+    }));
+    if (!r.ok) return fail(r.code || 'story_rejected', r.message);
+    this._publish();
+    return done({ story: r.result });
+  }
+
+  async _storyFinish({ stageId, matchId, outcome, charId }) {
+    const id = String(matchId || '');
+    const r = await this._mutateProfile((draft) => {
+      if (draft.story?.activeMatchId !== id) return { ok: true, replay: true, result: null };
+      const before = new Set(draft.story.skills);
+      const granted = grantStoryClear(draft, {
+        stageId: Number(stageId),
+        outcome: ['win', 'lose', 'draw'].includes(outcome) ? outcome : 'lose',
+        charId: charId ? String(charId) : null,
+        randomInt: secureRandomInt,
+      });
+      if (!granted.ok) return granted;
+      const learned = draft.story.skills.find((sid) => !before.has(sid)) || null;
+      endStoryMatch(draft, id);
+      return { ok: true, result: { ...granted.result, skill: learned } };
+    }, { shouldSave: (result) => !result?.replay });
+    if (!r.ok) return fail(r.code || 'story_rejected', r.message);
+    this._publish();
+    return done({ story: r.result, replay: !!r.replay });
+  }
+
+  async _storyAbort({ stageId, matchId }) {
+    const id = String(matchId || '');
+    const r = await this._mutateProfile((draft) => {
+      if (draft.story?.activeMatchId !== id) return { ok: true, replay: true, result: null };
+      const granted = grantStoryClear(draft, { stageId: Number(stageId), outcome: 'aborted' });
+      if (!granted.ok) return granted;
+      endStoryMatch(draft, id);
+      return { ok: true, result: granted.result };
+    }, { shouldSave: (result) => !result?.replay });
+    if (!r.ok) return fail(r.code || 'story_rejected', r.message);
+    this._publish();
+    return done({ story: r.result, replay: !!r.replay });
+  }
+
+  async _storyTalk({ stageId, kind }) {
+    const k = kind === 'clear' ? 'clear' : 'intro';
+    const r = await this._mutateProfile((draft) => {
+      if (isTalkRead(draft, Number(stageId), k)) return { ok: true, replay: true };
+      markTalkRead(draft, Number(stageId), k);
+      return { ok: true };
+    }, { shouldSave: (result) => !result?.replay });
+    if (!r.ok) return fail(r.code || 'story_rejected', r.message);
+    if (!r.replay) this._publish();
+    return done({ read: true, replay: !!r.replay });
   }
 }
 
@@ -8426,7 +8507,7 @@ function friendsCard(ctx) {
 }
 
 function storyCard(ctx) {
-  const p = ctx.profile();
+  const p = ctx.storyProfile();
   const totals = storyTotals(p);
   const next = Math.min(STORY_STAGE_COUNT, (p.story?.maxStage || 0) + 1);
   const stage = STAGE_BY_ID[next];
@@ -8443,7 +8524,9 @@ function storyCard(ctx) {
       onclick: () => ctx.setView('story'),
     }),
     ctx.app.mode === 'ONLINE'
-      ? el('p', { class: 'muted', text: '物語はこの端末の保存（LOCAL）で進みます。オンラインの資産とは分かれています。' })
+      ? el('p', { class: 'muted', text: ctx.storyOnline
+        ? '物語の進行と褒美はオンラインのアカウントに保存されます。'
+        : 'この接続では、物語はこの端末の保存（LOCAL）で進みます。オンラインの資産とは分かれています。' })
       : null,
   ]);
 }
@@ -9682,7 +9765,7 @@ async function onAbort(ctx, session) {
   const yes = await confirmDialog({
     title: '対戦を途中でやめますか',
     message: '中止すると報酬は 0 ペリカ、経験値も 0 になります。',
-    confirmLabel: 'やめる', danger: true,
+    confirmLabel: 'やめる', cancelLabel: '続ける', danger: true,
   });
   if (!yes) return;
   await session.abort();
@@ -11813,7 +11896,14 @@ __def("views/story.js", function (__req) {
  *
  * ・章と段の選択 → 前口上 → 対戦 → 制覇の会話 → 報酬 の順に進む
  * ・盤面の描画・操作は対戦画面（play.js）の renderMatch をそのまま使う
- * ・物語は LOCAL の保存にだけ書き込む。オンライン3人対戦の資産には触れない
+ *
+ * 保存先（ctx.storyOnline）
+ *  ・アカウント接続のオンライン中は、進行（制覇・術・碁印・既読）と褒美を
+ *    オンラインの資産へ書く。端末を変えても続きから遊べる。
+ *  ・それ以外（LOCAL、サーバー版・Supabase 版のオンライン）は従来どおり
+ *    この端末の保存だけに書き、オンライン3人対戦の資産には触れない。
+ *  ・進行中の盤面は、どちらの保存先でもこの端末に置く（1手ごとの通信を増やさない）。
+ *    どの保存先で始めた盤かを rec.save に持たせ、取り違えて褒美を渡さないようにする。
  */
 
 const { el, toast, confirmDialog, newRequestId, effectLevel } = __req("util.js");
@@ -11853,10 +11943,10 @@ function resetStoryView() {
 /* ───────────────────────── 入口 ───────────────────────── */
 
 function renderStory(root, ctx) {
-  if (ctx.app.mode === 'ONLINE') {
+  if (ctx.storyLoading) {
     root.appendChild(el('div', { class: 'card' }, [
       el('h2', { class: 'section-title', text: '物語' }),
-      el('div', { class: 'notice', text: 'オンラインの資産を表示中です。物語はこの端末の保存（LOCAL）で進めます。オンラインを抜けてから開いてください。' }),
+      el('div', { class: 'notice', text: 'オンラインの保存を読み込んでいます。つながったら、続きから始められます。' }),
       el('button', { class: 'btn sub', type: 'button', text: 'ホームへ', onclick: () => ctx.setView('home') }),
     ]));
     return;
@@ -11871,6 +11961,12 @@ function renderStory(root, ctx) {
       return;
     }
   }
+
+  // 別の保存先で始めた途中の盤は、そのままでは続けられない（褒美の行き先が変わるため）
+  const other = ctx.localStore.storyMatch;
+  if (other?.state.status === 'playing' && saveKindOf(other) !== saveKindOf(null, ctx)) {
+    return renderSaveMismatch(root, ctx, other);
+  }
   // 途中の盤があれば、その段の対戦画面へ戻す（再読み込みしても続きから）
   if (view.screen === 'map' && ctx.localStore.storyMatch?.state.status === 'playing') {
     view.screen = 'match';
@@ -11883,6 +11979,63 @@ function renderStory(root, ctx) {
   if (view.screen === 'intro') return renderDialogue(root, ctx, 'intro');
   if (view.screen === 'clear') return renderDialogue(root, ctx, 'clear');
   return renderMap(root, ctx);
+}
+
+/* ─────────────────── 保存先（端末／オンライン） ─────────────────── */
+
+/**
+ * その盤・いまの画面が、どちらの保存へ書くか。
+ * @param {{save?:string}|null} rec 盤の記録。null なら「いまの画面の保存先」を返す
+ */
+function saveKindOf(rec, ctx = null) {
+  if (rec) return rec.save === 'online' ? 'online' : 'local';
+  return ctx && ctx.storyOnline ? 'online' : 'local';
+}
+
+/** 進行中の盤を、いまの保存先の印をつけて端末に置く */
+function holdBoard(ctx, state) {
+  return ctx.localStore.setStoryMatch({ state, save: saveKindOf(null, ctx) });
+}
+
+/** 保存先を1行で示す（資産が混ざらないことを明示する） */
+function saveLabel(ctx) {
+  if (ctx.storyOnline) return '進行と褒美はオンラインのアカウントに保存されます（進行中の盤面はこの端末に残ります）。';
+  if (ctx.app.mode === 'ONLINE') return 'この接続では、物語はこの端末の保存（LOCAL）で進みます。オンラインの資産とは分かれています。';
+  return '進行はこの端末の保存（LOCAL）に残ります。';
+}
+
+/** 保存先が変わったまま盤が残っているときの案内。破棄するまで先へ進めない。 */
+function renderSaveMismatch(root, ctx, rec) {
+  const stage = STAGE_BY_ID[rec.state?.story?.stageId];
+  const wasOnline = saveKindOf(rec) === 'online';
+  root.appendChild(el('div', { class: 'card' }, [
+    el('h2', { class: 'section-title', text: '進行中の盤面があります' }),
+    el('div', { class: 'notice', text: wasOnline
+      ? 'この盤面はオンラインのアカウントで始めた段です。褒美もそちらに入るため、いまの表示のままでは続けられません。'
+      : 'この盤面はこの端末の保存で始めた段です。褒美もそちらに入るため、オンラインの表示のままでは続けられません。' }),
+    stage ? el('p', { class: 'muted', text: `第${stage.id}段「${stage.name}」` }) : null,
+    el('p', { class: 'muted', text: wasOnline
+      ? 'オンラインに入り直すと、そのまま続きから遊べます。'
+      : 'オンラインを抜けると、そのまま続きから遊べます。' }),
+    el('div', { class: 'row' }, [
+      el('button', {
+        class: 'btn sub', type: 'button', text: 'この盤面を破棄する',
+        onclick: async () => {
+          const yes = await confirmDialog({
+            title: '盤面を破棄しますか',
+            message: '盤面は失われます。褒美も受け取れません。段の一覧からやり直せます。',
+            confirmLabel: '破棄する', danger: true,
+          });
+          if (!yes) return;
+          const cleared = ctx.localStore.clearStoryMatch();
+          if (!cleared.ok) { audio.playSfx('error'); toast(cleared.message || '盤面を片付けられませんでした。', 'error'); return; }
+          resetStoryView();
+          ctx.refresh();
+        },
+      }),
+      el('button', { class: 'btn sub', type: 'button', text: 'ホームへ', onclick: () => ctx.setView('home') }),
+    ]),
+  ]));
 }
 
 /* ───────────────────────── 情景 ───────────────────────── */
@@ -11965,7 +12118,7 @@ function enemyFigure(stage, phase = 0, size = 92) {
 /* ───────────────────────── 章と段の一覧 ───────────────────────── */
 
 function renderMap(root, ctx) {
-  const p = ctx.localStore.profile;
+  const p = ctx.storyProfile();
   const totals = storyTotals(p);
 
   root.appendChild(el('div', { class: 'card' }, [
@@ -11973,6 +12126,7 @@ function renderMap(root, ctx) {
     el('p', { class: 'muted', text: '1対1の物語です。段を越えるごとに術を学び、章のボスを解けば碁印がひとつ灯ります。' }),
     el('div', { class: 'kv' }, [el('span', { text: '制覇' }), el('b', { text: `${totals.clearedStages} / ${totals.totalStages} 段` })]),
     el('div', { class: 'kv' }, [el('span', { text: '初回報酬' }), el('b', { text: `${totals.earnedPerica} / ${STORY_TOTAL_PERICA} ペリカ` })]),
+    el('div', { class: 'muted', text: saveLabel(ctx) }),
     el('div', { class: 'bar' }, [el('i', { style: `width:${Math.round((totals.clearedStages / STORY_STAGE_COUNT) * 100)}%` })]),
     el('div', { class: 'muted', style: 'margin-top:6px', text: totals.skills.length
       ? `覚えた術：${totals.skills.map((id) => SKILL_BY_ID[id]?.name).filter(Boolean).join('・')}`
@@ -12008,7 +12162,7 @@ function renderMap(root, ctx) {
 const SEAL_NAME = Object.fromEntries(Object.values(SEAL_BY_STAGE).map((s) => [s.id, s.name]));
 
 function stageRow(ctx, stage) {
-  const p = ctx.localStore.profile;
+  const p = ctx.storyProfile();
   const cleared = !!p.story?.cleared[stage.id];
   const gate = canEnterStage(p, stage.id);
   const unlock = SKILL_UNLOCK_BY_STAGE[stage.id];
@@ -12052,7 +12206,7 @@ const SEASON_LABEL = {
 function renderDialogue(root, ctx, kind) {
   const stage = STAGE_BY_ID[view.stageId];
   if (!stage) { resetStoryView(); ctx.refresh(); return; }
-  const p = ctx.localStore.profile;
+  const p = ctx.storyProfile();
   const lines = kind === 'intro' ? stage.intro : stage.clear;
   const seal = kind === 'clear' ? view.lastResult?.seal : null;
   const already = isTalkRead(p, stage.id, kind);
@@ -12060,10 +12214,7 @@ function renderDialogue(root, ctx, kind) {
   // 会話を読んだ記録だけ付ける（報酬・解放には影響しない）。
   // 初回だけ保存し、描画のたびに同じデータを書き直さない。
   if (!already) {
-    const saved = ctx.localStore.transaction((draft) => {
-      markTalkRead(draft.profile, stage.id, kind);
-      return { ok: true };
-    });
+    const saved = writeTalkRead(ctx, stage.id, kind);
     if (!saved.ok) {
       root.appendChild(el('div', { class: 'notice error', text: saved.message || '会話の既読状態を保存できませんでした。' }));
     }
@@ -12109,12 +12260,40 @@ function renderDialogue(root, ctx, kind) {
       el('button', { class: 'btn sub', type: 'button', text: '戻る', onclick: () => { resetStoryView(); ctx.refresh(); } }),
     ]
     : [
-      STAGE_BY_ID[stage.id + 1] && canEnterStage(ctx.localStore.profile, stage.id + 1).ok
+      STAGE_BY_ID[stage.id + 1] && canEnterStage(ctx.storyProfile(), stage.id + 1).ok
         ? el('button', { class: 'btn', type: 'button', text: '次の段へ', onclick: () => enterStage(ctx, stage.id + 1) })
         : null,
       el('button', { class: 'btn sub', type: 'button', text: '段の一覧へ', onclick: () => leaveStoryResult(ctx) }),
     ];
   root.appendChild(el('div', { class: 'card' }, [el('div', { class: 'row' }, buttons.filter(Boolean))]));
+}
+
+/**
+ * 会話の既読。オンラインでは書き込みを待たずに読み進められるようにし、
+ * 描画のたびに同じ会話を送り直さないよう、送信中の分だけ目印を持つ。
+ */
+const talkWrites = new Set();
+
+function writeTalkRead(ctx, stageId, kind) {
+  if (!ctx.storyOnline) {
+    return ctx.localStore.transaction((draft) => {
+      markTalkRead(draft.profile, stageId, kind);
+      return { ok: true };
+    });
+  }
+  const key = `${stageId}:${kind}`;
+  if (talkWrites.has(key)) return { ok: true };
+  talkWrites.add(key);
+  ctx.net.post('/api/story/talk', { stageId, kind }, { durable: false })
+    .catch(() => null)
+    .then(() => talkWrites.delete(key));
+  return { ok: true };
+}
+
+/** 物語のドロップ品の装備。進行と同じ保存先へ書く。 */
+function equipDrop(ctx, slot, id, charId) {
+  if (ctx.storyOnline) return ctx.api.equip(slot, id, charId);
+  return ctx.localStore.transaction((draft) => equipCosmetic(draft.profile, { slot, id, charId }));
 }
 
 function clearRewardCard(ctx, stage) {
@@ -12144,8 +12323,8 @@ function clearRewardCard(ctx, stage) {
       el('button', {
         class: 'btn small', type: 'button', text: '装備する',
         onclick: async () => {
-          const charId = ['outfit', 'accessory'].includes(c.slot) ? ctx.localStore.profile.lastCharId : null;
-          const res = await ctx.api.equip(c.slot, c.id, charId);
+          const charId = ['outfit', 'accessory'].includes(c.slot) ? ctx.storyProfile().lastCharId : null;
+          const res = await equipDrop(ctx, c.slot, c.id, charId);
           toast(res.ok ? `${c.name} を装備しました。` : (res.message || '装備できませんでした。'), res.ok ? 'info' : 'error');
           ctx.refresh();
         },
@@ -12201,7 +12380,7 @@ function advanceFromShow(ctx, kind) {
 /* ───────────────────────── 開始・進行 ───────────────────────── */
 
 function enterStage(ctx, stageId) {
-  const p = ctx.localStore.profile;
+  const p = ctx.storyProfile();
   const gate = canEnterStage(p, stageId);
   if (!gate.ok) { toast(gate.message, 'error'); return; }
   view.stageId = stageId;
@@ -12222,23 +12401,49 @@ function startStage(ctx, stageId) {
   startMatchNow(ctx, stageId);
 }
 
-function startMatchNow(ctx, stageId) {
+/** 段の盤面を作る。見た目はそのとき使っているキャラの装備をそのまま写す。 */
+function newBoardFor(profile, stageId, matchId) {
+  return createStoryMatch({
+    stageId,
+    matchId,
+    playerName: profile.name || 'あなた',
+    charId: profile.lastCharId,
+    cosmetics: appearanceFor(profile, profile.lastCharId),
+  });
+}
+
+/**
+ * オンライン（アカウント接続）で段を始める。
+ * 先に進行をオンラインへ記録し、通ってから盤面をこの端末へ置く。
+ */
+async function beginOnline(ctx, { stageId, matchId, onlineMatchId }) {
+  if (onlineMatchId) {
+    return { ok: false, code: 'online_busy', message: 'オンライン対戦の途中は、物語を始められません。' };
+  }
+  const profile = ctx.storyProfile();
+  const gate = canEnterStage(profile, stageId);
+  if (!gate.ok) return gate;
+  const r = await ctx.net.post('/api/story/begin', { stageId, matchId }, { durable: false });
+  if (!r.ok) return { ok: false, message: r.message || '物語の開始をオンラインに記録できませんでした。' };
+  const state = newBoardFor(profile, stageId, matchId);
+  const held = holdBoard(ctx, state);
+  if (!held.ok) return held;
+  return { ok: true, state };
+}
+
+async function startMatchNow(ctx, stageId) {
   const onlineMatchId = ctx.app.mode === 'ONLINE' ? (ctx.net.view?.match?.matchId || null) : null;
   const matchId = `story_${newRequestId()}`;
-  const saved = ctx.localStore.transaction((draft) => {
-    const profile = draft.profile;
-    const begun = beginStoryMatch(profile, { stageId, matchId, onlineMatchId });
-    if (!begun.ok) return begun;
-    const state = createStoryMatch({
-      stageId,
-      matchId,
-      playerName: profile.name || 'あなた',
-      charId: profile.lastCharId,
-      cosmetics: appearanceFor(profile, profile.lastCharId),
+  const saved = ctx.storyOnline
+    ? await beginOnline(ctx, { stageId, matchId, onlineMatchId })
+    : ctx.localStore.transaction((draft) => {
+      const profile = draft.profile;
+      const begun = beginStoryMatch(profile, { stageId, matchId, onlineMatchId });
+      if (!begun.ok) return begun;
+      const state = newBoardFor(profile, stageId, matchId);
+      draft.storyMatch = { state, save: 'local' };
+      return { ok: true, state };
     });
-    draft.storyMatch = { state };
-    return { ok: true, state };
-  });
   if (!saved.ok) {
     audio.playSfx('error');
     toast(saved.message || '物語の盤面を保存できないため開始できませんでした。', 'error');
@@ -12262,7 +12467,7 @@ function renderStoryMatch(root, ctx) {
 }
 
 function buildStorySession(ctx, rec, stage) {
-  const p = ctx.localStore.profile;
+  const p = ctx.storyProfile();
   const training = TRAINING_BOARD_BY_STAGE[stage.id];
   return {
     kind: 'story',
@@ -12279,8 +12484,8 @@ function buildStorySession(ctx, rec, stage) {
       const res = applyPlayerAction(rec.state, action);
       if (!res.ok) { audio.playSfx('error'); toast(res.message, 'error'); return false; }
       const saved = res.state.status === 'finished'
-        ? finishStory(ctx, res.state, stage)
-        : ctx.localStore.setStoryMatch({ state: res.state });
+        ? await finishStory(ctx, res.state, stage)
+        : holdBoard(ctx, res.state);
       if (!saved.ok) {
         audio.playSfx('error');
         toast(saved.message || '着手を保存できなかったため、操作前の盤面に戻しました。', 'error');
@@ -12299,8 +12504,8 @@ function buildStorySession(ctx, rec, stage) {
       if (!live || live.status !== 'playing' || live.turn !== ENEMY_SEAT) return;
       const out = runEnemyTurn(live);
       const saved = out.state.status === 'finished'
-        ? finishStory(ctx, out.state, stage)
-        : ctx.localStore.setStoryMatch({ state: out.state });
+        ? await finishStory(ctx, out.state, stage)
+        : holdBoard(ctx, out.state);
       if (!saved.ok) {
         audio.playSfx('error');
         toast(saved.message || '相手の手番を保存できなかったため、操作前の盤面に戻しました。', 'error');
@@ -12316,16 +12521,18 @@ function buildStorySession(ctx, rec, stage) {
       const yes = await confirmDialog({
         title: 'この段をやめますか',
         message: '盤面は失われます。褒美も受け取れません。段の一覧からやり直せます。',
-        confirmLabel: 'やめる', danger: true,
+        confirmLabel: 'やめる', cancelLabel: '続ける', danger: true,
       });
       if (!yes) return;
-      const saved = ctx.localStore.transaction((draft) => {
-        const ended = grantStoryClear(draft.profile, { stageId: stage.id, outcome: 'aborted' });
-        if (!ended.ok) return ended;
-        endStoryMatch(draft.profile, rec.state.matchId);
-        draft.storyMatch = null;
-        return { ok: true };
-      });
+      const saved = ctx.storyOnline
+        ? await abortOnline(ctx, rec.state, stage)
+        : ctx.localStore.transaction((draft) => {
+          const ended = grantStoryClear(draft.profile, { stageId: stage.id, outcome: 'aborted' });
+          if (!ended.ok) return ended;
+          endStoryMatch(draft.profile, rec.state.matchId);
+          draft.storyMatch = null;
+          return { ok: true };
+        });
       if (!saved.ok) {
         audio.playSfx('error');
         toast(saved.message || '中止状態を保存できなかったため、物語は継続しています。', 'error');
@@ -12456,25 +12663,54 @@ function leaveStoryResult(ctx) {
   return true;
 }
 
-function finishStory(ctx, state, stage) {
+/** オンラインで段をやめる。記録を消してから、この端末の盤面を片付ける。 */
+async function abortOnline(ctx, state, stage) {
+  const r = await ctx.net.post('/api/story/abort', {
+    stageId: stage.id, matchId: state.matchId,
+  }, { durable: false });
+  if (!r.ok) return { ok: false, message: r.message || '中止をオンラインに記録できませんでした。' };
+  return ctx.localStore.clearStoryMatch();
+}
+
+/**
+ * オンラインで段の決着を記録する。
+ * 褒美はオンライン側で確定する。盤面はこのあと結果画面で見せるだけなので、
+ * 端末に置けなかった場合も褒美は取り消さない（知らせるだけにする）。
+ */
+async function finishOnline(ctx, state, stage, outcome) {
+  const r = await ctx.net.post('/api/story/finish', {
+    stageId: stage.id,
+    matchId: state.matchId,
+    outcome,
+    charId: state.seats[PLAYER_SEAT - 1]?.charId || null,
+  }, { durable: false });
+  if (!r.ok) return { ok: false, message: r.message || '結果をオンラインに記録できませんでした。' };
+  const held = holdBoard(ctx, state);
+  if (!held.ok) toast(held.message || '盤面をこの端末に保存できませんでしたが、褒美はオンラインに記録されています。', 'error');
+  return { ok: true, result: r.data?.result?.story || null, outcome };
+}
+
+async function finishStory(ctx, state, stage) {
   clearCpuTimer();
   const out = storyOutcome(state);
   const outcome = out?.outcome || 'lose';
-  const saved = ctx.localStore.transaction((draft) => {
-    const p = draft.profile;
-    const before = new Set(p.story.skills);
-    const reward = grantStoryClear(p, {
-      stageId: stage.id,
-      outcome,
-      charId: state.seats[PLAYER_SEAT - 1]?.charId || null,
-      randomInt: hasSecureRandom() ? secureRandomInt : null,
+  const saved = ctx.storyOnline
+    ? await finishOnline(ctx, state, stage, outcome)
+    : ctx.localStore.transaction((draft) => {
+      const p = draft.profile;
+      const before = new Set(p.story.skills);
+      const reward = grantStoryClear(p, {
+        stageId: stage.id,
+        outcome,
+        charId: state.seats[PLAYER_SEAT - 1]?.charId || null,
+        randomInt: hasSecureRandom() ? secureRandomInt : null,
+      });
+      if (!reward.ok) return reward;
+      const learned = p.story.skills.find((id) => !before.has(id)) || null;
+      endStoryMatch(p, state.matchId);
+      draft.storyMatch = { state, save: 'local' };
+      return { ok: true, result: { ...reward.result, skill: learned }, outcome };
     });
-    if (!reward.ok) return reward;
-    const learned = p.story.skills.find((id) => !before.has(id)) || null;
-    endStoryMatch(p, state.matchId);
-    draft.storyMatch = { state };
-    return { ok: true, result: { ...reward.result, skill: learned }, outcome };
-  });
   if (!saved.ok) return saved;
   view.lastResult = saved.result;
   // 連敗数（ヒントの案内にだけ使う）
