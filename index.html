@@ -12486,7 +12486,7 @@ async function beginOnline(ctx, { stageId, matchId, onlineMatchId }) {
  */
 async function beginOnServer(ctx, stageId) {
   const r = await ctx.net.post('/api/story/begin', { stageId }, { durable: false });
-  if (!r.ok) return { ok: false, message: r.message || '物語を開始できませんでした。' };
+  if (!r.ok) return { ok: false, message: serverStoryMessage(r) };
   const run = r.data?.view?.story || ctx.net.view?.story || null;
   if (!run) return { ok: false, message: '盤面を受け取れませんでした。' };
   view.run = run;
@@ -12575,6 +12575,20 @@ async function submitToServer(ctx, run, stage, action) {
     audio.playSfx(outcome === 'win' ? 'win' : 'lose');
   }
   return true;
+}
+
+/**
+ * サーバーからの断りを、画面に出す文へ直す。
+ *
+ * 物語の窓口をまだ持たないサーバーにつながることがある（配信の途中など）。
+ * そのときに「その操作はありません。」とだけ出ると理由が分からないので、
+ * 何を待てばよいかが分かる文にする。端末側の保存へは戻さない（§55）。
+ */
+function serverStoryMessage(r) {
+  if (r.code === 'not_found' || r.code === 'http_404') {
+    return 'このサーバーはまだ物語に対応していません。更新をお待ちください。';
+  }
+  return r.message || '物語を開始できませんでした。';
 }
 
 /** サーバーで進める段をやめる。 */
