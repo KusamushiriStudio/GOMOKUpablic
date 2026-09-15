@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const html = readFileSync(resolve(root, 'index.html'), 'utf8');
-const roots = ['../../shared/constants.js', '../../shared/gacha.js', '../../shared/profile.js', '../../shared/rules.js'];
+const roots = ['../../shared/constants.js', '../../shared/gacha.js', '../../shared/profile.js', '../../shared/rules.js', '../../shared/story/engine.js', '../../shared/story/stages.js'];
 
 function moduleSource(name) {
   const marker = `__def(${JSON.stringify(name)}, function (__req) {`;
@@ -54,7 +54,9 @@ const out = `// Generated from index.html by tools/extract-edge-core.mjs. Do not
   + [...found.values()].join('\n\n')
   + `\n\nexport const constants = __req('../../shared/constants.js');\n`
   + `export const profile = __req('../../shared/profile.js');\n`
-  + `export const rules = __req('../../shared/rules.js');\n`;
+  + `export const rules = __req('../../shared/rules.js');\n`
+  + `export const storyEngine = __req('../../shared/story/engine.js');\n`
+  + `export const stages = __req('../../shared/story/stages.js');\n`;
 
 const target = resolve(root, 'supabase/functions/api/game-core.js');
 mkdirSync(dirname(target), { recursive: true });

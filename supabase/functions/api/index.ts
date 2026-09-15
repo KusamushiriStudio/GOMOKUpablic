@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { constants, profile as profileLogic, rules } from './game-core.js';
 import { isSettled, rewardsForMatch } from './rewards.ts';
 import { socialRoute, type SocialStore } from './social.ts';
+import { storyRoute, storyView, type CommitInput, type StoryStore } from './story.ts';
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -67,7 +68,76 @@ async function viewOf(db: any, userId: string, knownProfile?: any) {
   const loaded = knownProfile ? { profile: knownProfile } : await loadProfile(db, userId);
   const room = await findRoom(db, userId);
   const match = await findMatch(db, room);
-  return { profile: loaded.profile, room: room ? publicRoom(room) : null, match: match ? matchView(match, userId) : null, queue: null };
+  // 進行中の物語も一緒に載せる。再接続したときはこれだけで盤へ戻れる（§28）。
+  const story = await storyView(createStoryStore(db), userId);
+  return {
+    profile: loaded.profile,
+    room: room ? publicRoom(room) : null,
+    match: match ? matchView(match, userId) : null,
+    queue: null,
+    ...story,
+  };
+}
+
+/* ───────────────────── 物語の保管庫 ───────────────────── */
+
+function storyRowOf(row: any) {
+  if (!row) return null;
+  return {
+    runId: row.run_id,
+    userId: row.user_id,
+    stageId: Number(row.stage_id),
+    status: row.status,
+    state: row.data?.state ?? row.data,
+    revision: Number(row.revision || 0),
+  };
+}
+
+/**
+ * 物語の表とやりとりする窓口。run の読み書きと、資産との同時確定を受け持つ。
+ */
+function createStoryStore(db: any): StoryStore {
+  return {
+    loadProfile: (userId: string) => loadProfile(db, userId),
+    async activeRun(userId: string) {
+      const { data, error } = await db.from('triad_story_runs')
+        .select('run_id,user_id,stage_id,status,data,revision')
+        .eq('user_id', userId).eq('status', 'playing').maybeSingle();
+      if (error) throw error;
+      return storyRowOf(data);
+    },
+    async findRun(runId: string) {
+      const { data, error } = await db.from('triad_story_runs')
+        .select('run_id,user_id,stage_id,status,data,revision')
+        .eq('run_id', runId).maybeSingle();
+      if (error) throw error;
+      return storyRowOf(data);
+    },
+    async commit(input: CommitInput) {
+      const { data, error } = await db.rpc('triad_commit_story_run', {
+        p_user_id: input.userId,
+        p_run_id: input.runId,
+        p_expected_revision: input.expectedRevision,
+        p_stage_id: input.stageId,
+        p_status: input.status,
+        p_run_data: { state: input.state },
+        p_profile_data: input.profile,
+        p_profile_revision: input.profileRevision,
+        p_request_id: input.requestId,
+        p_body_hash: input.bodyHash,
+        p_response: input.response,
+      });
+      if (error) throw error;
+      const row = data?.[0];
+      return { status: row?.status || 'busy', response: row?.response ?? null };
+    },
+    async hasLiveMatch(userId: string) {
+      const match = await findMatch(db, await findRoom(db, userId));
+      return !!match && match.state?.status === 'playing';
+    },
+    randomInt: (max: number) => crypto.getRandomValues(new Uint32Array(1))[0] % Math.max(1, Math.floor(max)),
+    bodyHash: (path: string, body: unknown) => requestHash(path, body),
+  };
 }
 
 /**
@@ -357,6 +427,14 @@ async function route(ctx: any, path: string, body: any) {
     if ('fail' in social) return fail(social.fail.code, social.fail.message, await viewOf(ctx.db, userId));
     const view = { ...await viewOf(ctx.db, userId), ...(social.view || {}) };
     return success(view, social.result === undefined ? {} : { result: social.result });
+  }
+
+  // 物語。扱わない経路では null が返るので素通りする。
+  const story = await storyRoute(createStoryStore(ctx.db), userId, path, body);
+  if (story) {
+    const view = { ...await viewOf(ctx.db, userId), ...(story.view || {}) };
+    if ('fail' in story && story.fail) return fail(story.fail.code, story.fail.message, view);
+    return success(view, story.result === undefined ? {} : { result: story.result });
   }
 
   if (path === '/me' || path === '/world/poll') {

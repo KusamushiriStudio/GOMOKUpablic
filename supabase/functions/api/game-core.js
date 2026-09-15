@@ -2793,73 +2793,571 @@ function publicSnapshot(state) {
 return { BOARD_W, BOARD_H, BOARD_SIZE, indexToLabel, labelOf, ERR, ERR_MESSAGE_JA, errorMessage, createMatch, pickStartSeat, cloneState, isFrozen, frozenIndices, canPlaceAt, legalPlacements, emptyCount, neighborsOf, isAdjacent, findWinningLine, effectiveSkill, skillInRuleset, skillForSeat, minStoneResult, isWinnerSeat, outcomeForSeat, v99Of, orderIndexOf, unlockTurnOf, isEnhanced, v99FormOf, usesCapOf, v99Info, skillsOf, skillOfId, usesOf, applyAction, skillFirstTargets, skillSecondTargets, usableSkills, canUseSkill, mustPass, fillWinCells, immediateWinCells, chooseExtraIndex, chooseCpuAction, publicSnapshot };
 });
 
-__def("../../shared/rng.js", function (__req) {
+__def("../../shared/story/engine.js", function (__req) {
 /**
- * 暗号学的乱数のみを使う整数乱数。
- * 安全な乱数が使えない場合はエラーにし、Math.random へフォールバックしない。
+ * TRIAD — 物語モードの進行エンジン（1対1 / ルールセット story_seasons）
+ *
+ * 方針
+ *  ・盤面の基本ルールは shared/rules.js をそのまま使う。3人対戦の挙動は変えない。
+ *  ・物語固有の要素（予告技・修練盤・ボスの段階変化）はこのファイルに閉じる。
+ *  ・DOM / Node 固有 API を参照しない（ブラウザとサーバーで同じ結果になる）。
+ *
+ * 予告技の扱い（統合仕様書 A-6）
+ *  ・宣言した手番では盤面は変わらない。宣言がその手番の行動になる。
+ *  ・次の敵の手番は、**予約済み行動だけを解決する**。
+ *    防がれても、通常着手や別スキルを追加で実行しない。
+ *  ・守り・氷結・対象消失などで防がれた場合も不発として、
+ *    予定のエナジー・回数・手番を**消費する**。
+ *  ・予告後に対象や優先順を変更しない。撃ち直しもしない。
+ *  ・予告狙撃の使用回数は、そのキャラの火花と同じ2回の枠を共有する。
  */
 
-class InsecureRandomError extends Error {
-  constructor() {
-    super('安全な乱数が利用できないため、抽選を実行できません。');
-    this.code = 'insecure_random';
-  }
+const { createMatch, applyAction, cloneState, findWinningLine, emptyCount, chooseCpuAction, publicSnapshot, isFrozen, neighborsOf, labelOf, skillsOf, usesOf } = __req("../../shared/rules.js");
+const { RULESET } = __req("../../shared/rulesets.js");
+const { CHARACTER_BY_ID, SKILL_BY_CHARACTER, MAX_ENERGY, WIN_LENGTH, LINE_DIRS, BOARD_W } = __req("../../shared/constants.js");
+const { STAGE_BY_ID, TRAINING_BOARD_BY_ID, TRAINING_BOARD_BY_STAGE, TELEGRAPH, TELEGRAPHS, bossPhasesOfStage, unlockedSkillsAt, unlockedCharsAt } = __req("../../shared/story/stages.js");
+
+const PLAYER_SEAT = 1;
+const ENEMY_SEAT = 2;
+
+/* ───────────────────────── 生成 ───────────────────────── */
+
+/**
+ * 物語の1試合を作る。
+ * 主人公は、そのステージまでに習得した術（最大6）を共有エナジーで使う。
+ */
+function createStoryMatch(opts) {
+  const stage = STAGE_BY_ID[Number(opts.stageId)];
+  if (!stage) throw new Error(`未知のステージ: ${opts.stageId}`);
+
+  const board = stage.training ? TRAINING_BOARD_BY_ID[stage.training] : TRAINING_BOARD_BY_STAGE[stage.id];
+  // 使える術は、そのステージの解放予定まで。修練盤は盤ごとの指定を優先する。
+  const skills = board && Array.isArray(board.skills)
+    ? board.skills.filter((id) => unlockedSkillsAt(stage.id).includes(id))
+    : unlockedSkillsAt(stage.id);
+
+  // 見た目に使うキャラクター（術は skills が持つ）
+  const masters = unlockedCharsAt(stage.id);
+  let charId = opts.charId && CHARACTER_BY_ID[opts.charId] ? opts.charId : null;
+  if (!charId) charId = masters[masters.length - 1] || 'hibana';
+
+  const state = createMatch({
+    matchId: String(opts.matchId || `story-${stage.id}-${opts.startedAt ?? Date.now()}`),
+    mode: 'story',
+    ruleset: RULESET.STORY,
+    startedAt: opts.startedAt,
+    seats: [
+      {
+        seat: PLAYER_SEAT,
+        name: String(opts.playerName || 'あなた'),
+        charId,
+        kind: 'human',
+        cosmetics: opts.cosmetics ?? null,
+        skills,
+      },
+      {
+        seat: ENEMY_SEAT,
+        name: stage.enemy.name,
+        charId: stage.enemy.charId,
+        kind: 'cpu',
+      },
+    ],
+  });
+
+  state.story = {
+    stageId: stage.id,
+    chapter: stage.chapter,
+    boss: !!stage.boss,
+    level: stage.enemy.level,
+    trainingId: board ? board.id : null,
+    enemyTurns: 0,
+    phase: 0,
+    telegraph: null,
+    telegraphUses: { [TELEGRAPH.SNIPE]: 0, [TELEGRAPH.SEIZE]: 0 },
+    scriptIndex: 0,
+    script: board ? [...(board.enemyScript || [])] : [],
+    allowedTelegraphs: [...(stage.telegraphs || [])],
+    skills: [...skills],
+    cleared: false,
+  };
+
+  if (board) applyTrainingBoard(state, board);
+  return state;
 }
 
-function getCryptoObj() {
-  const c = globalThis.crypto;
-  if (c && typeof c.getRandomValues === 'function') return c;
+function applyTrainingBoard(state, board) {
+  for (const i of board.player) state.stones[i] = PLAYER_SEAT;
+  for (const i of board.enemy) state.stones[i] = ENEMY_SEAT;
+  for (const i of board.playerGuards || []) {
+    if (state.stones[i] === PLAYER_SEAT) state.guards[i] = 1;
+  }
+  for (const seat of [PLAYER_SEAT, ENEMY_SEAT]) {
+    const v = Number(board.energy?.[seat] ?? 0);
+    // 修練盤の指定値は初回の手番開始加算込み。ここへ重ねて加算しない。
+    state.energy[seat] = Math.min(MAX_ENERGY, Math.max(0, v));
+  }
+  // 置いてある石は「打った石」として数えない（途中局面の再現のため）
+  state.stats[PLAYER_SEAT].placed = 0;
+  state.stats[ENEMY_SEAT].placed = 0;
+  if (board.telegraph) {
+    state.story.telegraph = {
+      id: board.telegraph.id,
+      targets: [...(board.telegraph.targets || [])],
+      seat: Number(board.telegraph.by ?? ENEMY_SEAT),
+      declaredAt: -1, // 開始前に予告済み。敵の最初の手番で解決する。
+    };
+  }
+  state.turn = PLAYER_SEAT;
+}
+
+/* ───────────────────────── 内部ヘルパ ───────────────────────── */
+
+function pushStoryEvent(state, ev) {
+  state.eventSeq += 1;
+  const full = { ...ev, id: `${state.matchId}#s${state.eventSeq}`, seq: state.eventSeq, at: ev.at ?? Date.now() };
+  state.events.push(full);
+  if (state.events.length > 40) state.events.splice(0, state.events.length - 40);
+  return full;
+}
+
+/** 盤面を変えたあとの決着判定。手番は進めない（予告の解決で使う）。 */
+function settleBoard(state) {
+  state.opCount += 1;
+  state.revision += 1;
+  const win = findWinningLine(state, 0);
+  if (win) {
+    state.status = 'finished';
+    state.result = { kind: 'win', winner: win.owner, winners: [win.owner], line: win.line, reason: 'five' };
+    state.finishedAt = Date.now();
+    return true;
+  }
+  if (emptyCount(state) === 0) {
+    state.status = 'finished';
+    state.result = { kind: 'draw', winner: 0, winners: [], line: [], reason: 'board_full' };
+    state.finishedAt = Date.now();
+    return true;
+  }
+  return false;
+}
+
+/** 予告狙撃と火花は同じ2回の枠を共有する */
+function usedForTelegraph(state, id) {
+  const tg = TELEGRAPHS[id];
+  const own = state.story.telegraphUses[id] || 0;
+  // 旧保存では、技を1つだけ持つ席の skillUses は数値になっている。
+  // そのため、実際に共有先の技を持つ敵だけ通常技の使用分を足す。
+  if (tg.sharesUsesWith
+    && skillsOf(state, ENEMY_SEAT).some((skill) => skill.id === tg.sharesUsesWith)) {
+    return own + usesOf(state, ENEMY_SEAT, tg.sharesUsesWith);
+  }
+  return own;
+}
+
+function canTelegraph(state, id) {
+  const tg = TELEGRAPHS[id];
+  if (!tg) return false;
+  if (!state.story.allowedTelegraphs.includes(id)) return false;
+  if (state.story.telegraph) return false;               // 同時に1つだけ
+  if (state.energy[ENEMY_SEAT] < tg.cost) return false;
+  if (usedForTelegraph(state, id) >= tg.uses) return false;
+  return true;
+}
+
+/** 予告の消費。防がれても不発でも、必ずここを通す（A-6）。 */
+function consumeTelegraph(state, id) {
+  const tg = TELEGRAPHS[id];
+  state.energy[ENEMY_SEAT] = Math.max(0, state.energy[ENEMY_SEAT] - tg.cost);
+  state.story.telegraphUses[id] = (state.story.telegraphUses[id] || 0) + 1;
+}
+
+/* ───────────────────────── 予告の解決 ───────────────────────── */
+
+/**
+ * 予告狙撃の対象を、予告した優先順から選ぶ。
+ * 空の候補は飛ばし、最初に「相手の石がある」候補を対象にする。
+ * その石が守られていても、別の石へ撃ち直さない（A-6・修練盤5）。
+ */
+function snipeTarget(state, targets) {
+  for (const idx of targets) {
+    if (!Number.isInteger(idx) || idx < 0 || idx >= state.stones.length) continue;
+    if (state.stones[idx] === PLAYER_SEAT) return idx;
+  }
   return null;
 }
 
-function hasSecureRandom() {
-  return getCryptoObj() !== null;
+/**
+ * 敵の手番開始時に呼ぶ。予告があれば解決する。
+ * 解決した手番は、それだけで敵の行動となる（通常着手を追加しない）。
+ * @returns {{resolved:boolean, outcome:string|null, finished:boolean, event:object|null}}
+ */
+function resolveTelegraph(state) {
+  const t = state.story.telegraph;
+  if (!t) return { resolved: false, outcome: null, finished: false, event: null };
+  // 宣言した手番と同じ手番では解決しない
+  if (t.declaredAt >= 0 && t.declaredAt >= state.story.enemyTurns) {
+    return { resolved: false, outcome: null, finished: false, event: null };
+  }
+
+  const tg = TELEGRAPHS[t.id];
+  const targets = Array.isArray(t.targets) ? t.targets : [];
+  state.story.telegraph = null;
+
+  // 破損した旧保存や手編集データが紛れても、例外や盤外書込を起こさず
+  // この敵手番だけを安全に消費する。未知の技は資源を消費しない。
+  if (!tg) return { resolved: true, outcome: 'invalid', finished: false, event: null };
+
+  // 消費は結果によらず必ず行う（防がれても不発でも）
+  consumeTelegraph(state, t.id);
+
+  const done = (outcome, text, index, finished = false) => {
+    const ev = pushStoryEvent(state, {
+      type: 'telegraph',
+      phase: outcome,
+      seat: ENEMY_SEAT,
+      telegraphId: t.id,
+      telegraphName: tg.name,
+      index: index ?? null,
+      label: index != null ? labelOf(state, index) : null,
+      text,
+    });
+    return { resolved: true, outcome, finished, event: ev };
+  };
+
+  if (t.id === TELEGRAPH.SNIPE) {
+    const idx = snipeTarget(state, targets);
+    if (idx == null) return done('missed', `${tg.name}は空を撃った。`, targets[0] ?? null);
+    if (state.guards[idx]) return done('blocked', `${tg.name}は守りに防がれた。`, idx);
+    state.stones[idx] = 0;
+    state.guards[idx] = 0;
+    const finished = settleBoard(state);
+    return done('hit', `${tg.name}が命中した。`, idx, finished);
+  }
+
+  // 予告占領：予告した地点1つを見る
+  const idx = targets[0];
+  if (!Number.isInteger(idx) || idx < 0 || idx >= state.stones.length) {
+    return done('missed', `${tg.name}は的を失った。`, null);
+  }
+  if (isFrozen(state, idx)) return done('frozen', `${tg.name}は氷結に阻まれた。`, idx);
+  if (state.stones[idx] === ENEMY_SEAT) return done('missed', `${tg.name}はすでに自分の石だった。`, idx);
+  if (state.stones[idx] === PLAYER_SEAT) {
+    if (state.guards[idx]) return done('blocked', `${tg.name}は守りに防がれた。`, idx);
+    state.stones[idx] = ENEMY_SEAT;
+    state.guards[idx] = 0;
+    const finished = settleBoard(state);
+    return done('hit', `${tg.name}で石を奪われた。`, idx, finished);
+  }
+  // 空き交点なら敵の石を置く
+  state.stones[idx] = ENEMY_SEAT;
+  state.guards[idx] = 0;
+  state.stats[ENEMY_SEAT].placed += 1;
+  const finished = settleBoard(state);
+  return done('hit', `${tg.name}で ${labelOf(state, idx)} を占領された。`, idx, finished);
+}
+
+/* ───────────────────────── ボスの段階変化 ───────────────────────── */
+
+/**
+ * 敵の n 手目開始時の見た目変化。
+ * 見た目と台詞だけを変え、盤面・エナジー・使用回数・予告状態には一切触れない。
+ */
+function applyBossPhase(state) {
+  if (!state.story.boss) return null;
+  const phases = bossPhasesOfStage(state.story.stageId);
+  const turn = state.story.enemyTurns + 1; // これから始まる手番
+  const hit = phases.find((p) => p.atEnemyTurn === turn);
+  if (!hit) return null;
+  const step = phases.indexOf(hit) + 1;
+  if (state.story.phase >= step) return null;
+  state.story.phase = step;
+  return pushStoryEvent(state, {
+    type: 'boss_phase', seat: ENEMY_SEAT, phase: step,
+    look: hit.look, text: hit.line,
+  });
+}
+
+/* ───────────────────────── 敵の思考 ───────────────────────── */
+
+function lineRun(state, index, owner) {
+  let best = 1;
+  const col = index % BOARD_W;
+  const row = Math.floor(index / BOARD_W);
+  for (const [dc, dr] of LINE_DIRS) {
+    let count = 1;
+    for (const sign of [1, -1]) {
+      let c = col + dc * sign;
+      let r = row + dr * sign;
+      while (c >= 0 && c < BOARD_W && r >= 0 && r < state.height
+        && state.stones[r * BOARD_W + c] === owner) {
+        count += 1; c += dc * sign; r += dr * sign;
+      }
+    }
+    best = Math.max(best, count);
+  }
+  return best;
+}
+
+/** その点を敵が取ると五連になるか（空点・主人公の石の両方を見る） */
+function seizeWins(state, index) {
+  if (state.guards[index]) return false;
+  if (state.stones[index] === ENEMY_SEAT) return false;
+  if (isFrozen(state, index)) return false;
+  const probe = cloneState(state);
+  probe.stones[index] = ENEMY_SEAT;
+  return lineRun(probe, index, ENEMY_SEAT) >= WIN_LENGTH;
+}
+
+/** 主人公の「あと1手で五」を作っている石のうち、消せば止まるもの */
+function sniperTarget(state) {
+  const cands = [];
+  for (let i = 0; i < state.stones.length; i += 1) {
+    if (state.stones[i] !== PLAYER_SEAT || state.guards[i]) continue;
+    const run = lineRun(state, i, PLAYER_SEAT);
+    if (run >= WIN_LENGTH - 1) cands.push({ index: i, run });
+  }
+  cands.sort((a, b) => b.run - a.run || a.index - b.index);
+  return cands.length ? cands[0] : null;
+}
+
+function chooseEnemyAction(state, rand = Math.random) {
+  const st = state.story;
+
+  // 1. 修練盤の指定手順
+  while (st.scriptIndex < st.script.length) {
+    const idx = st.script[st.scriptIndex];
+    st.scriptIndex += 1;
+    if (state.stones[idx] === 0 && !isFrozen(state, idx)) {
+      return { kind: 'action', action: { type: 'place', seat: ENEMY_SEAT, index: idx } };
+    }
+  }
+
+  const level = st.level || 1;
+
+  // 2. 予告技（レベル5以上・そのステージで許可されている場合のみ）
+  if (level >= 5) {
+    if (canTelegraph(state, TELEGRAPH.SEIZE)) {
+      for (let i = 0; i < state.stones.length; i += 1) {
+        if (seizeWins(state, i)) return { kind: 'telegraph', id: TELEGRAPH.SEIZE, targets: [i] };
+      }
+    }
+    if (canTelegraph(state, TELEGRAPH.SNIPE)) {
+      const t = sniperTarget(state);
+      if (t && t.run >= WIN_LENGTH - 1) return { kind: 'telegraph', id: TELEGRAPH.SNIPE, targets: [t.index] };
+    }
+  }
+
+  // 3. 自分のキャラのスキル（レベル4以上）
+  if (level >= 4) {
+    const skillAction = chooseEnemySkill(state);
+    if (skillAction) return { kind: 'action', action: skillAction };
+  }
+
+  // 4. 通常の思考
+  const action = chooseCpuAction(state, ENEMY_SEAT, rand);
+  return action ? { kind: 'action', action } : { kind: 'none' };
+}
+
+function chooseEnemySkill(state) {
+  const list = skillsOf(state, ENEMY_SEAT);
+  const skill = list[0];
+  if (!skill) return null;
+  if (state.energy[ENEMY_SEAT] < skill.cost) return null;
+  if (usesOf(state, ENEMY_SEAT, skill.id) >= skill.uses) return null;
+
+  const size = state.stones.length;
+  switch (skill.id) {
+    case 'transmute': {
+      for (let i = 0; i < size; i += 1) {
+        if (state.stones[i] === PLAYER_SEAT && seizeWins(state, i)) {
+          return { type: 'skill', seat: ENEMY_SEAT, skillId: 'transmute', index: i };
+        }
+      }
+      return null;
+    }
+    case 'spark': {
+      const t = sniperTarget(state);
+      if (t && t.run >= WIN_LENGTH - 1) return { type: 'skill', seat: ENEMY_SEAT, skillId: 'spark', index: t.index };
+      return null;
+    }
+    case 'ward': {
+      for (let i = 0; i < size; i += 1) {
+        if (state.stones[i] !== ENEMY_SEAT || state.guards[i]) continue;
+        if (lineRun(state, i, ENEMY_SEAT) >= WIN_LENGTH - 1) return { type: 'skill', seat: ENEMY_SEAT, skillId: 'ward', index: i };
+      }
+      return null;
+    }
+    case 'pull': {
+      const t = sniperTarget(state);
+      if (!t) return null;
+      const dest = neighborsOf(state, t.index).find((d) => state.stones[d] === 0 && !isFrozen(state, d));
+      if (dest === undefined) return null;
+      return { type: 'skill', seat: ENEMY_SEAT, skillId: 'pull', from: t.index, to: dest };
+    }
+    case 'windwalk':
+      return null; // 通常の着手のほうが強いので使わない
+    case 'freeze': {
+      for (let i = 0; i < size; i += 1) {
+        if (state.stones[i] !== 0 || isFrozen(state, i)) continue;
+        if (lineRun(state, i, PLAYER_SEAT) >= WIN_LENGTH) return { type: 'skill', seat: ENEMY_SEAT, skillId: 'freeze', index: i };
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+/* ───────────────────────── 手番の実行 ───────────────────────── */
+
+function applyPlayerAction(state, action) {
+  if (Number(action?.seat ?? PLAYER_SEAT) !== PLAYER_SEAT) {
+    return { ok: false, code: 'not_your_turn', message: 'あなたの手番ではありません。' };
+  }
+  const res = applyAction(state, { ...action, seat: PLAYER_SEAT });
+  if (!res.ok) return res;
+  res.state.story = cloneStory(state.story);
+  return res;
+}
+
+function cloneStory(story) {
+  return JSON.parse(JSON.stringify(story));
+}
+
+/** 盤面を変えずに手番だけ渡す（予告の宣言・解決で使う） */
+function passTurnToPlayer(state) {
+  state.opCount += 1;
+  state.revision += 1;
+  state.turn = PLAYER_SEAT;
+  state.energy[PLAYER_SEAT] = Math.min(MAX_ENERGY, state.energy[PLAYER_SEAT] + 1);
+  for (let i = 0; i < state.ice.length; i += 1) {
+    if (state.ice[i] > 0 && state.opCount >= state.ice[i]) {
+      state.ice[i] = 0;
+      state.iceOwner[i] = 0;
+    }
+  }
 }
 
 /**
- * [0, maxExclusive) の一様乱数整数。剰余バイアスを除去するため棄却法を使う。
- * @param {number} maxExclusive
+ * 敵の手番を1つ進める。
+ *  ① ボスの段階変化（見た目のみ）
+ *  ② 予告があれば解決する。**解決したらその手番は終わり**（通常着手はしない）
+ *  ③ 予告が無ければ、通常の行動を1つ
  */
-function secureRandomInt(maxExclusive) {
-  if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
-    throw new RangeError('maxExclusive は 1 以上の整数である必要があります');
+function runEnemyTurn(state, rand = Math.random) {
+  let next = cloneState(state);
+  next.story = cloneStory(state.story);
+  const events = [];
+  if (next.status !== 'playing' || next.turn !== ENEMY_SEAT) return { state: next, events };
+
+  // ① 見た目の段階変化（盤面・エナジー・使用回数には触れない）
+  const phaseEv = applyBossPhase(next);
+  if (phaseEv) events.push(phaseEv);
+
+  // ② 予告の解決。解決した場合、この手番はそれで終わり。
+  const tg = resolveTelegraph(next);
+  if (tg.resolved) {
+    if (tg.event) events.push(tg.event);
+    next.story.enemyTurns += 1;
+    if (!tg.finished) {
+      // 命中して盤面が変わった場合、settleBoard で opCount は進んでいる。
+      // 不発の場合も1手番を消費するので、手番だけを渡す。
+      if (tg.outcome === 'hit') {
+        next.turn = PLAYER_SEAT;
+        next.energy[PLAYER_SEAT] = Math.min(MAX_ENERGY, next.energy[PLAYER_SEAT] + 1);
+        for (let i = 0; i < next.ice.length; i += 1) {
+          if (next.ice[i] > 0 && next.opCount >= next.ice[i]) { next.ice[i] = 0; next.iceOwner[i] = 0; }
+        }
+      } else {
+        passTurnToPlayer(next);
+      }
+    }
+    return { state: next, events };
   }
-  const c = getCryptoObj();
-  if (!c) throw new InsecureRandomError();
-  if (maxExclusive === 1) return 0;
 
-  const limit = Math.floor(0x1_0000_0000 / maxExclusive) * maxExclusive;
-  const buf = new Uint32Array(1);
-  for (let attempt = 0; attempt < 1000; attempt += 1) {
-    c.getRandomValues(buf);
-    if (buf[0] < limit) return buf[0] % maxExclusive;
+  // ③ 行動
+  const choice = chooseEnemyAction(next, rand);
+  if (choice.kind === 'telegraph') {
+    const def = TELEGRAPHS[choice.id];
+    next.story.telegraph = {
+      id: choice.id,
+      targets: [...choice.targets],
+      seat: ENEMY_SEAT,
+      declaredAt: next.story.enemyTurns,
+    };
+    events.push(pushStoryEvent(next, {
+      type: 'telegraph', phase: 'declared', seat: ENEMY_SEAT,
+      telegraphId: choice.id, telegraphName: def.name,
+      index: choice.targets[0],
+      label: choice.targets.map((i) => labelOf(next, i)).join('→'),
+      text: `${def.name}。次の手番で ${choice.targets.map((i) => labelOf(next, i)).join(' → ')} を狙う。`,
+    }));
+    // 宣言はその手番の行動。盤面は変えずに手番を渡す。
+    next.story.enemyTurns += 1;
+    passTurnToPlayer(next);
+    return { state: next, events };
   }
-  throw new InsecureRandomError();
+
+  if (choice.kind === 'none') {
+    next.story.enemyTurns += 1;
+    return { state: next, events };
+  }
+
+  const res = applyAction(next, choice.action);
+  if (!res.ok) {
+    const fallback = chooseCpuAction(next, ENEMY_SEAT, rand);
+    const res2 = fallback ? applyAction(next, fallback) : { ok: false };
+    if (!res2.ok) {
+      next.story.enemyTurns += 1;
+      return { state: next, events };
+    }
+    res2.state.story = next.story;
+    next = res2.state;
+    events.push(res2.event);
+  } else {
+    res.state.story = next.story;
+    next = res.state;
+    events.push(res.event);
+  }
+  next.story.enemyTurns += 1;
+  return { state: next, events };
 }
 
-/** 16 進の大文字ランダム文字列（ルームコード等） */
-function secureHexUpper(length) {
-  const c = getCryptoObj();
-  if (!c) throw new InsecureRandomError();
-  const bytes = new Uint8Array(Math.ceil(length / 2));
-  c.getRandomValues(bytes);
-  let s = '';
-  for (const b of bytes) s += b.toString(16).padStart(2, '0');
-  return s.slice(0, length).toUpperCase();
+/* ───────────────────────── 表示用 ───────────────────────── */
+
+function storySnapshot(state) {
+  const base = publicSnapshot(state);
+  const st = state.story || null;
+  return {
+    ...base,
+    story: st && {
+      stageId: st.stageId,
+      chapter: st.chapter,
+      boss: st.boss,
+      trainingId: st.trainingId,
+      enemyTurns: st.enemyTurns,
+      phase: st.phase,
+      skills: [...(st.skills || [])],
+      // 予告は隠さない。プレイヤーが対処できることが前提の技のため。
+      telegraph: st.telegraph
+        ? { id: st.telegraph.id, targets: [...st.telegraph.targets] }
+        : null,
+      cleared: st.cleared,
+    },
+  };
 }
 
-/** URL 安全なトークン（セッション秘密値・requestId 等） */
-function secureToken(bytes = 32) {
-  const c = getCryptoObj();
-  if (!c) throw new InsecureRandomError();
-  const arr = new Uint8Array(bytes);
-  c.getRandomValues(arr);
-  let s = '';
-  for (const b of arr) s += b.toString(16).padStart(2, '0');
-  return s;
+function storyOutcome(state) {
+  if (state.status !== 'finished') return null;
+  const r = state.result;
+  if (!r) return null;
+  if (r.kind === 'win') return { outcome: r.winner === PLAYER_SEAT ? 'win' : 'lose', line: r.line };
+  if (r.kind === 'aborted') return { outcome: 'aborted', line: [] };
+  return { outcome: 'draw', line: [] };
 }
 
-return { InsecureRandomError, hasSecureRandom, secureRandomInt, secureHexUpper, secureToken };
+
+
+return { TELEGRAPH, TELEGRAPHS, PLAYER_SEAT, ENEMY_SEAT, createStoryMatch, canTelegraph, resolveTelegraph, applyBossPhase, chooseEnemyAction, applyPlayerAction, runEnemyTurn, storySnapshot, storyOutcome };
 });
 
 __def("../../shared/story/stages.js", function (__req) {
@@ -3768,6 +4266,75 @@ function nextStageId(id) {
 return { STORY_DATA_VERSION, ix, TELEGRAPH, TELEGRAPHS, SKILL_UNLOCKS, SKILL_UNLOCK_BY_STAGE, SEALS, SEAL_BY_STAGE, unlockedCharsAt, unlockedSkillsAt, CHAPTERS, CHAPTER_BY_ID, TRAINING_BOARDS, TRAINING_BOARD_BY_ID, TRAINING_BOARD_BY_STAGE, BOSS_PHASES, BOSS_SHOW, STAGE_REWARD, BOSS_REWARD, STORY_XP, DUPLICATE_DROP_XP, STAGES, STAGE_BY_ID, STORY_STAGE_COUNT, BOSS_STAGES, STORY_TOTAL_PERICA, STORY_DROP_IDS, stageById, stagesOfChapter, trainingBoardOfStage, bossPhasesOfStage, nextStageId };
 });
 
+__def("../../shared/rng.js", function (__req) {
+/**
+ * 暗号学的乱数のみを使う整数乱数。
+ * 安全な乱数が使えない場合はエラーにし、Math.random へフォールバックしない。
+ */
+
+class InsecureRandomError extends Error {
+  constructor() {
+    super('安全な乱数が利用できないため、抽選を実行できません。');
+    this.code = 'insecure_random';
+  }
+}
+
+function getCryptoObj() {
+  const c = globalThis.crypto;
+  if (c && typeof c.getRandomValues === 'function') return c;
+  return null;
+}
+
+function hasSecureRandom() {
+  return getCryptoObj() !== null;
+}
+
+/**
+ * [0, maxExclusive) の一様乱数整数。剰余バイアスを除去するため棄却法を使う。
+ * @param {number} maxExclusive
+ */
+function secureRandomInt(maxExclusive) {
+  if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
+    throw new RangeError('maxExclusive は 1 以上の整数である必要があります');
+  }
+  const c = getCryptoObj();
+  if (!c) throw new InsecureRandomError();
+  if (maxExclusive === 1) return 0;
+
+  const limit = Math.floor(0x1_0000_0000 / maxExclusive) * maxExclusive;
+  const buf = new Uint32Array(1);
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    c.getRandomValues(buf);
+    if (buf[0] < limit) return buf[0] % maxExclusive;
+  }
+  throw new InsecureRandomError();
+}
+
+/** 16 進の大文字ランダム文字列（ルームコード等） */
+function secureHexUpper(length) {
+  const c = getCryptoObj();
+  if (!c) throw new InsecureRandomError();
+  const bytes = new Uint8Array(Math.ceil(length / 2));
+  c.getRandomValues(bytes);
+  let s = '';
+  for (const b of bytes) s += b.toString(16).padStart(2, '0');
+  return s.slice(0, length).toUpperCase();
+}
+
+/** URL 安全なトークン（セッション秘密値・requestId 等） */
+function secureToken(bytes = 32) {
+  const c = getCryptoObj();
+  if (!c) throw new InsecureRandomError();
+  const arr = new Uint8Array(bytes);
+  c.getRandomValues(arr);
+  let s = '';
+  for (const b of arr) s += b.toString(16).padStart(2, '0');
+  return s;
+}
+
+return { InsecureRandomError, hasSecureRandom, secureRandomInt, secureHexUpper, secureToken };
+});
+
 __def("../../shared/rulesets.js", function (__req) {
 /**
  * ルールセットの分離。
@@ -3954,3 +4521,5 @@ return { RULESET, V99, DEFAULT_PVP_RULESET, RULESETS, rulesetOf, rulesetOfState 
 export const constants = __req('../../shared/constants.js');
 export const profile = __req('../../shared/profile.js');
 export const rules = __req('../../shared/rules.js');
+export const storyEngine = __req('../../shared/story/engine.js');
+export const stages = __req('../../shared/story/stages.js');
