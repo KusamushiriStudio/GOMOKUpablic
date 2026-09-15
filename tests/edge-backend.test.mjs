@@ -33,3 +33,30 @@ test('Supabase migration protects profile and match writes with idempotency and 
   assert.match(sql, /grant execute[\s\S]*service_role/i);
   assert.doesNotMatch(sql, /grant execute[\s\S]*\b(?:anon|authenticated)\b/i);
 });
+
+/**
+ * 返り値の名前（revision）と列名が同じなので、更新文では必ず別名で列を指す。
+ * 修飾を忘れると PL/pgSQL が 42702 で落ち、「新規作成はできるが、2回目以降の
+ * 更新がすべて失敗する」という気づきにくい壊れ方をする。実際に一度そうなった。
+ */
+test('commit 関数の最終定義は revision の更新を別名で修飾している', async () => {
+  const { readdirSync } = await import('node:fs');
+  const dir = new URL('../supabase/migrations/', import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+  const sql = files.map((f) => readFileSync(new URL(f, dir), 'utf8')).join('\n');
+
+  for (const name of ['triad_commit_profile', 'triad_commit_match', 'triad_commit_story_run']) {
+    const marker = `create or replace function public.${name}(`;
+    const at = sql.lastIndexOf(marker);
+    assert.ok(at >= 0, `${name} の定義が見つかる`);
+    const end = sql.indexOf('end $$;', at);
+    assert.ok(end > at, `${name} の本体が閉じている`);
+    const body = sql.slice(at, end);
+    assert.doesNotMatch(
+      body,
+      /set[^;]*?[^.\w]revision\s*=\s*revision\s*\+/i,
+      `${name} は revision の右辺を表の別名で修飾する`,
+    );
+    assert.match(body, /revision\s*=\s*\w+\.revision\s*\+\s*1/i, `${name} は別名つきで加算する`);
+  }
+});

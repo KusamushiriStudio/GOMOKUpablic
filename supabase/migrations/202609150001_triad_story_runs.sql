@@ -56,6 +56,9 @@ create or replace function public.triad_commit_story_run(
   p_body_hash text,
   p_response jsonb
 ) returns table(status text, revision bigint, profile_revision bigint, response jsonb)
+-- 返り値の名前（status・revision）は表の列名と同じなので、更新文では必ず
+-- 別名で列を指す。そうしないと PL/pgSQL が 42702（column reference is
+-- ambiguous）で落ちる。
 language plpgsql security definer set search_path = public as $$
 declare
   current_revision bigint;
@@ -95,10 +98,10 @@ begin
     if current_revision <> p_expected_revision then
       return query select 'stale', current_revision, null::bigint, null::jsonb; return;
     end if;
-    update public.triad_story_runs
-      set data = p_run_data, status = p_status, updated_at = now(), revision = revision + 1
-      where run_id = p_run_id
-      returning triad_story_runs.revision into current_revision;
+    update public.triad_story_runs r2
+      set data = p_run_data, status = p_status, updated_at = now(), revision = r2.revision + 1
+      where r2.run_id = p_run_id
+      returning r2.revision into current_revision;
   end if;
 
   if p_profile_data is not null then
@@ -114,9 +117,9 @@ begin
       if current_profile <> p_profile_revision then
         return query select 'stale', null::bigint, current_profile, null::jsonb; return;
       end if;
-      update public.triad_profiles set data = p_profile_data, revision = revision + 1, updated_at = now()
-        where user_id = p_user_id
-        returning triad_profiles.revision into current_profile;
+      update public.triad_profiles tp2 set data = p_profile_data, revision = tp2.revision + 1, updated_at = now()
+        where tp2.user_id = p_user_id
+        returning tp2.revision into current_profile;
     end if;
   end if;
 
