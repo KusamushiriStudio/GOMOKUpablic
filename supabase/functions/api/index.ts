@@ -482,6 +482,13 @@ async function route(ctx: any, path: string, body: any) {
     return success(await viewOf(ctx.db, userId, out.profile), { result: { equipped: true }, replay: out.replay });
   }
 
+  if (path === '/settings') {
+    // 端末をまたいで持ち歩く操作設定（§24）。資産には影響しない。
+    const out = await mutateProfile(ctx, path, body, (draft) => profileLogic.applySettings(draft, body.settings));
+    if (out.error) return out.error;
+    return success(await viewOf(ctx.db, userId, out.profile), { result: out.result, replay: out.replay });
+  }
+
   if (path === '/mission/claim') {
     const out = await mutateProfile(ctx, path, body, (draft) => profileLogic.claimMission(draft, String(body.missionId)));
     if (out.error) return out.error;

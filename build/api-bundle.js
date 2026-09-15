@@ -5020,6 +5020,11 @@ async function route(ctx, path, body) {
     if (out.error) return out.error;
     return success(await viewOf(ctx.db, userId, out.profile), { result: { equipped: true }, replay: out.replay });
   }
+  if (path === "/settings") {
+    const out = await mutateProfile(ctx, path, body, (draft) => profile.applySettings(draft, body.settings));
+    if (out.error) return out.error;
+    return success(await viewOf(ctx.db, userId, out.profile), { result: out.result, replay: out.replay });
+  }
   if (path === "/mission/claim") {
     const out = await mutateProfile(ctx, path, body, (draft) => profile.claimMission(draft, String(body.missionId)));
     if (out.error) return out.error;

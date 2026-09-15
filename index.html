@@ -648,8 +648,9 @@ __def("app.js", function (__req) {
  * TRIAD — アプリ本体（ルーティング・ヘッダー・ローカル/オンラインの振り分け）
  */
 
-const { el, clear, toast, fmt, newRequestId, shareLink, inAppBrowser } = __req("util.js");
+const { el, clear, toast, fmt, newRequestId, shareLink, inAppBrowser, setEffectLevel } = __req("util.js");
 const { audio } = __req("audio.js");
+const { preferences } = __req("preferences.js");
 const { fx } = __req("fx.js");
 const { localStore } = __req("localstore.js");
 const { net } = __req("net.js");
@@ -918,6 +919,17 @@ const ctx = {
       }
       return localStore.transaction((draft) => claimMission(draft.profile, missionId));
     },
+    /**
+     * 操作まわりの設定を変える。
+     *
+     * 端末側の見た目はすぐ変え、アカウントへは後から書く。設定は資産では
+     * ないので、通信に失敗しても操作を巻き戻さず、知らせるだけにする（§51）。
+     */
+    async settings(patch) {
+      const r = await activeNet().post('/api/settings', { settings: patch }, { durable: false });
+      if (!r.ok) toast('設定をアカウントへ保存できませんでした。この端末でのみ有効です。', 'error');
+      return r.ok ? { ok: true } : r;
+    },
     async setName(name) {
       if (app.mode === 'ONLINE') {
         const r = await activeNet().post('/api/name', { name }, { durable: false });
@@ -971,6 +983,7 @@ function render() {
 
   // つながるまでは遊ばせない。端末の保存で代わりに進めることはしない（§26・§27・§55）。
   const conn = connectionState();
+  if (conn === 'ready') applyAccountSettings();
   if (conn !== 'ready') {
     renderConnectionGate(root, conn);
     syncUrl();
@@ -1054,6 +1067,25 @@ function renderConnectionGate(root, state) {
       ? el('p', { class: 'muted', text: '端末に残っているデータだけで進めることはできません。ペリカ・所持品・戦績はアカウント側が正式な記録です。' })
       : null,
   ]));
+}
+
+/**
+ * アカウントに置いてある設定を、この端末へ写す。
+ *
+ * サーバー側が正で、端末の控えは表示用（§51）。読み込み直後の1回だけ当てる。
+ * それ以降は端末での変更を上書きしないよう触らない。
+ */
+let settingsApplied = false;
+
+function applyAccountSettings() {
+  if (settingsApplied) return;
+  const s = activeNet().view?.profile?.settings;
+  if (!s) return;
+  settingsApplied = true;
+  audio.setSettings({ bgm: s.bgm, sfx: s.sfx, ambient: s.ambient, muted: s.muted });
+  preferences.set({ confirmMove: s.confirmMove });
+  setEffectLevel(s.effectLevel);
+  ctx.syncMute();
 }
 
 /** いま物語で鳴らすべき環境音 */
@@ -3245,7 +3277,7 @@ __def("../../shared/profile.js", function (__req) {
  * ローカル(localStorage) とサーバー(JSON) の双方で同じ関数を使う。
  */
 
-const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, GACHA_HISTORY_LIMIT, SAVE_VERSION, parseDrawId } = __req("../../shared/constants.js");
+const { CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, COSMETICS, COSMETIC_BY_ID, DEFAULT_EQUIP, COSMETIC_SLOTS, MISSIONS, MISSION_BY_ID, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, GACHA_HISTORY_LIMIT, SAVE_VERSION, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, parseDrawId } = __req("../../shared/constants.js");
 const { drawMany, defaultWeights, ratesToWeights, weightsToRates, offerRates } = __req("../../shared/gacha.js");
 const { STAGE_BY_ID, STORY_STAGE_COUNT, STORY_TOTAL_PERICA, SKILL_UNLOCKS, SKILL_UNLOCK_BY_STAGE, SEAL_BY_STAGE, STAGE_REWARD, STORY_XP, DUPLICATE_DROP_XP } = __req("../../shared/story/stages.js");
 
@@ -3287,9 +3319,52 @@ function createProfile(opts = {}) {
     rewardedMatches: {},
     legacyCoins: null, // 旧コインは退避のみ。ペリカへ変換しない。
     story: createStoryArea(),
+    settings: createSettingsArea(),
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/**
+ * 端末をまたいで持ち歩く操作まわりの設定（統合仕様書 §24）。
+ *
+ * 音量や着手前確認は「その人の遊び方」なので、端末ごとに設定し直さなくて済む
+ * ようにアカウントへ置く。端末側にも控えを残すが、正しいのはこちら。
+ */
+function createSettingsArea() {
+  return {
+    confirmMove: true,
+    bgm: DEFAULT_AUDIO.bgm,
+    sfx: DEFAULT_AUDIO.sfx,
+    ambient: DEFAULT_AUDIO.ambient,
+    muted: DEFAULT_AUDIO.muted,
+    effectLevel: DEFAULT_EFFECT_LEVEL,
+  };
+}
+
+const clamp01 = (v, fallback) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(1, Math.max(0, n));
+};
+
+/**
+ * 設定の書き換え。知らない項目と範囲外の値は捨てる。
+ * @param {object} patch 変更したい項目だけを持つ
+ */
+function applySettings(profile, patch) {
+  if (!patch || typeof patch !== 'object') return { ok: false, code: 'bad_settings', message: '設定の形式が不正です。' };
+  const base = profile.settings || createSettingsArea();
+  const next = { ...createSettingsArea(), ...base };
+  if ('confirmMove' in patch) next.confirmMove = !!patch.confirmMove;
+  if ('muted' in patch) next.muted = !!patch.muted;
+  for (const key of ['bgm', 'sfx', 'ambient']) {
+    if (key in patch) next[key] = clamp01(patch[key], next[key]);
+  }
+  if ('effectLevel' in patch && EFFECT_LEVELS.includes(patch.effectLevel)) next.effectLevel = patch.effectLevel;
+  profile.settings = next;
+  profile.updatedAt = Date.now();
+  return { ok: true, result: { settings: { ...next } } };
 }
 
 /**
@@ -3471,6 +3546,9 @@ function normalizeProfile(raw) {
     const v = ratesToWeights(raw.gachaRates);
     if (v.ok) base.gachaRates = { ...raw.gachaRates };
   }
+
+  // ── 端末をまたぐ設定。無い保存は既定値のまま。
+  if (raw.settings && typeof raw.settings === 'object') applySettings(base, raw.settings);
 
   // ── 物語（V3 → V4 の移行）
   // V3 までの保存には story が無い。既定値を入れるだけで、
@@ -4091,7 +4169,7 @@ function summarize(profile) {
   };
 }
 
-return { createProfile, createStoryArea, normalizeProfile, playerLevel, charLevel, playerLevelProgress, charLevelProgress, ownedCharacters, ownsCharacter, ownsCosmetic, ownedCosmetics, equipCosmetic, resetEquipToDefault, appearanceFor, bodyHash, LEDGER_ERR_CONFLICT, ledgerLookup, ledgerRecord, pruneLedger, effectiveWeights, currentOfferRates, pullGacha, trainCharacter, grantMatchReward, canEnterStage, beginStoryMatch, endStoryMatch, grantStoryClear, storyTotals, markTalkRead, isTalkRead, missionProgress, claimMission, summarize };
+return { createProfile, createStoryArea, createSettingsArea, applySettings, normalizeProfile, playerLevel, charLevel, playerLevelProgress, charLevelProgress, ownedCharacters, ownsCharacter, ownsCosmetic, ownedCosmetics, equipCosmetic, resetEquipToDefault, appearanceFor, bodyHash, LEDGER_ERR_CONFLICT, ledgerLookup, ledgerRecord, pruneLedger, effectiveWeights, currentOfferRates, pullGacha, trainCharacter, grantMatchReward, canEnterStage, beginStoryMatch, endStoryMatch, grantStoryClear, storyTotals, markTalkRead, isTalkRead, missionProgress, claimMission, summarize };
 });
 __def("../../shared/gacha.js", function (__req) {
 /**
@@ -5467,7 +5545,7 @@ __def("dbnet.js", function (__req) {
 
 const { ROOM_CAPACITY, ROOM_CODE_LENGTH, DISCONNECT_GRACE_MS, CHARACTER_BY_ID } = __req("../../shared/constants.js");
 const { createMatch, applyAction, publicSnapshot, outcomeForSeat, pickStartSeat } = __req("../../shared/rules.js");
-const { createProfile, normalizeProfile, grantMatchReward, appearanceFor, ownsCharacter, pullGacha, trainCharacter, equipCosmetic, resetEquipToDefault, claimMission, missionProgress, currentOfferRates, beginStoryMatch, endStoryMatch, grantStoryClear, markTalkRead, isTalkRead } = __req("../../shared/profile.js");
+const { createProfile, normalizeProfile, grantMatchReward, appearanceFor, ownsCharacter, pullGacha, trainCharacter, equipCosmetic, resetEquipToDefault, claimMission, missionProgress, currentOfferRates, beginStoryMatch, endStoryMatch, grantStoryClear, markTalkRead, isTalkRead, applySettings } = __req("../../shared/profile.js");
 const { secureHexUpper, secureRandomInt } = __req("../../shared/rng.js");
 const { newRequestId } = __req("util.js");
 
@@ -5920,6 +5998,7 @@ class DbNet {
         case '/api/equip': return this._equip(payload);
         case '/api/equip/reset': return this._equipReset(payload);
         case '/api/mission/claim': return this._claimMission(payload);
+        case '/api/settings': return this._settings(payload);
         case '/api/story/begin': return this._storyBegin(payload);
         case '/api/story/finish': return this._storyFinish(payload);
         case '/api/story/abort': return this._storyAbort(payload);
@@ -6242,6 +6321,13 @@ class DbNet {
     });
     this._publish();
     return done({ reset: true });
+  }
+
+  async _settings({ settings }) {
+    const r = await this._mutateProfile((draft) => applySettings(draft, settings));
+    if (!r.ok) return fail(r.code || 'settings_rejected', r.message);
+    this._publish();
+    return done(r.result);
   }
 
   async _claimMission({ missionId }) {
@@ -11658,6 +11744,7 @@ function renderSettings(root, ctx) {
           const saved = preferences.set({ confirmMove: event.target.checked });
           if (!saved.ok) toast(saved.message, 'error');
           else toast(`着手前確認を${preferences.values.confirmMove ? 'ON' : 'OFF'}にしました。`);
+          ctx.api.settings({ confirmMove: preferences.values.confirmMove });
           ctx.refresh();
         },
       }),
@@ -11671,13 +11758,13 @@ function renderSettings(root, ctx) {
 
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: '音' }),
-    slider('BGM音量', s.bgm, (v) => audio.setSettings({ bgm: v })),
-    slider('効果音量', s.sfx, (v) => audio.setSettings({ sfx: v })),
-    slider('環境音量', s.ambient, (v) => audio.setSettings({ ambient: v })),
+    slider('BGM音量', s.bgm, (v) => audio.setSettings({ bgm: v }), () => ctx.api.settings({ bgm: audio.settings.bgm })),
+    slider('効果音量', s.sfx, (v) => audio.setSettings({ sfx: v }), () => ctx.api.settings({ sfx: audio.settings.sfx })),
+    slider('環境音量', s.ambient, (v) => audio.setSettings({ ambient: v }), () => ctx.api.settings({ ambient: audio.settings.ambient })),
     el('label', { class: 'row', style: 'gap:6px;font-size:13px' }, [
       el('input', {
         type: 'checkbox', checked: s.muted, style: 'width:auto;min-height:auto',
-        onchange: (e) => { audio.setSettings({ muted: e.target.checked }); ctx.syncMute(); },
+        onchange: (e) => { audio.setSettings({ muted: e.target.checked }); ctx.syncMute(); ctx.api.settings({ muted: audio.settings.muted }); },
       }),
       el('span', { text: '全体ミュート' }),
     ]),
@@ -11721,13 +11808,20 @@ function renderSettings(root, ctx) {
   ]));
 }
 
-function slider(label, value, onInput) {
+/**
+ * 音量つまみ。
+ *
+ * つまみを動かしている間は端末側だけを変え、指を離したときに1回だけ
+ * アカウントへ書く。動かすたびに送ると通信が増えすぎる。
+ */
+function slider(label, value, onInput, onCommit) {
   const out = el('b', { text: `${Math.round(value * 100)}%` });
   return el('label', { class: 'field' }, [
     el('span', {}, [el('span', { text: label }), ' ', out]),
     el('input', {
       type: 'range', min: '0', max: '100', value: String(Math.round(value * 100)),
       oninput: (e) => { const v = Number(e.target.value) / 100; out.textContent = `${e.target.value}%`; onInput(v); },
+      onchange: () => onCommit?.(),
     }),
   ]);
 }
@@ -11823,7 +11917,7 @@ function effectChip(ctx, label, value) {
     class: 'chip', type: 'button',
     'aria-pressed': effectLevel() === value ? 'true' : 'false',
     text: label,
-    onclick: () => { setEffectLevel(value); ctx.refresh(); },
+    onclick: () => { setEffectLevel(value); ctx.api.settings({ effectLevel: value }); ctx.refresh(); },
   });
 }
 

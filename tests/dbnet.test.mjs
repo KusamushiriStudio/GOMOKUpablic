@@ -174,3 +174,18 @@ test('DbNet story talk marks a conversation read once', async () => {
   assert.equal(net.profile.story.readTalks['1:intro'], true);
   assert.equal(writes.length, 1, '既読は一度だけ書き込む');
 });
+
+test('DbNet settings are validated and kept on the shared profile', async () => {
+  const { net } = storyNet();
+
+  const ok = await net.post('/api/settings', {
+    settings: { confirmMove: false, bgm: 0.5, sfx: 2, effectLevel: 'low', unknown: 'x' },
+  });
+
+  assert.equal(ok.ok, true);
+  assert.equal(net.profile.settings.confirmMove, false);
+  assert.equal(net.profile.settings.bgm, 0.5);
+  assert.equal(net.profile.settings.sfx, 1, '範囲外は端で止める');
+  assert.equal(net.profile.settings.effectLevel, 'low');
+  assert.equal('unknown' in net.profile.settings, false, '知らない項目は持ち込ませない');
+});

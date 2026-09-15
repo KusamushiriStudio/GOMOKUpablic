@@ -1260,3 +1260,27 @@ test('設定画面に LOCAL / ONLINE の切り替えは無い', async () => {
     findNode(root, (n) => n.tagName === 'H2' && n.textContent === 'アカウント', 'アカウントの札が出る');
   });
 });
+
+test('アカウントに置いた設定は、読み込みのときにこの端末へ写す', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    const { preferences } = requireModule('preferences.js');
+    const { effectLevel } = requireModule('util.js');
+    const { audio } = requireModule('audio.js');
+
+    const online = createProfile({ id: 'p_online', name: '旅人' });
+    online.settings = {
+      ...online.settings, confirmMove: false, bgm: 0.5, muted: true, effectLevel: 'off',
+    };
+    onlineAccount(triad, { profile: online });
+    triad.ctx.refresh();
+
+    assert.equal(preferences.values.confirmMove, false, '着手前確認がアカウント側に合う');
+    assert.equal(audio.settings.bgm, 0.5);
+    assert.equal(audio.settings.muted, true);
+    assert.equal(effectLevel(), 'off');
+  });
+});
