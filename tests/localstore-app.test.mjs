@@ -1284,3 +1284,53 @@ test('アカウントに置いた設定は、読み込みのときにこの端�
     assert.equal(effectLevel(), 'off');
   });
 });
+
+test('遊んでいる最中に通信が切れたら、黙って操作不能にせず知らせる', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    onlineAccount(triad, { profile: createProfile({ id: 'p_online', name: '旅人' }) });
+    triad.dbNet.status = 'online';
+    triad.ctx.setView('home');
+
+    const root = browser.document.getElementById('view-root');
+    // 文言は子要素に入るので、親の class ではなく中身の文で探す
+    const banner = () => walkNodes(root).find((n) => n.textContent === '再接続しています。');
+    assert.equal(banner(), undefined, 'つながっている間は何も出さない');
+
+    triad.dbNet.status = 'connecting';
+    triad.ctx.refresh();
+    assert.ok(banner(), '不調のときは状態を出す');
+    findButton(root, '再接続');
+    // 盤面や画面は出したままにする（操作不能で黙らせない）
+    assert.ok(walkNodes(root).some((n) => n.tagName === 'BUTTON' && n.textContent === '物語（1対1）'), 'ホームは出たまま');
+  });
+});
+
+test('ログアウトは端末の保存へ戻らず、接続の画面へ戻す', async () => {
+  const storage = createStorage();
+  await withBrowser({ storage, bootable: true }, async (browser) => {
+    const requireModule = await loadFreshBundle();
+    requireModule('app.js');
+    const triad = browser.window.__triad;
+    const { ctx, app } = triad;
+    onlineAccount(triad, { profile: createProfile({ id: 'p_online', name: '旅人' }) });
+    let signedOut = 0;
+    triad.dbNet.signOut = async () => { signedOut += 1; triad.dbNet.view = null; return { ok: true }; };
+    // 出たあとの接続さがしは、この試験では空振りで終わらせる
+    triad.dbNet.ensure = async () => false;
+
+    const r = await ctx.api.signOut();
+    await flushAsync();
+
+    assert.equal(r.ok, true);
+    assert.equal(signedOut, 1);
+    assert.equal(app.mode, 'ONLINE', 'ローカルへは切り替わらない');
+    const root = browser.document.getElementById('view-root');
+    findNode(root, (n) => (
+      n.tagName === 'H2' && /接続しています|接続できません|インターネット接続が必要です/.test(n.textContent)
+    ), '接続の画面へ戻る');
+  });
+});

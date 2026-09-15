@@ -930,6 +930,25 @@ const ctx = {
       if (!r.ok) toast('設定をアカウントへ保存できませんでした。この端末でのみ有効です。', 'error');
       return r.ok ? { ok: true } : r;
     },
+    /**
+     * いまのアカウントから出る（§44）。
+     *
+     * 端末の保存へは戻さない。出たあとは接続の画面に戻り、
+     * つなぎ直すと新しいゲストとして始まる。
+     */
+    async signOut() {
+      const n = activeNet();
+      if (typeof n.signOut !== 'function') {
+        return { ok: false, message: 'この接続先ではログアウトできません。' };
+      }
+      await n.signOut();
+      settingsApplied = false;
+      app.onlineKind = 'detecting';
+      app.view = 'home';
+      render();
+      detectOnlineBackend();
+      return { ok: true };
+    },
     async setName(name) {
       if (app.mode === 'ONLINE') {
         const r = await activeNet().post('/api/name', { name }, { durable: false });
@@ -983,7 +1002,18 @@ function render() {
 
   // つながるまでは遊ばせない。端末の保存で代わりに進めることはしない（§26・§27・§55）。
   const conn = connectionState();
-  if (conn === 'ready') applyAccountSettings();
+  if (conn === 'ready') {
+    applyAccountSettings();
+    // 遊んでいる最中に通信が途切れたら、黙って操作不能にせず状態を出す（§52）。
+    const trouble = connectionTrouble();
+    if (trouble) root.appendChild(el('div', { class: 'notice error' }, [
+      el('span', { text: trouble }),
+      el('button', {
+        class: 'btn sub small', type: 'button', text: '再接続', style: 'margin-left:8px',
+        onclick: () => { activeNet().connect(); render(); },
+      }),
+    ]));
+  }
   if (conn !== 'ready') {
     renderConnectionGate(root, conn);
     syncUrl();
@@ -1033,6 +1063,25 @@ function connectionState() {
   if (!app.onlineKind) return 'offline';
   if (!activeNet().view?.profile) return 'loading';
   return 'ready';
+}
+
+/**
+ * 遊んでいる最中の通信の不調。問題なければ null。
+ *
+ * 盤面はすでに手元にあるので画面は出したまま、何が起きているかだけを添える。
+ */
+function connectionTrouble() {
+  const n = activeNet();
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return 'オフラインです。通信が戻るまで、ペリカ・褒美・対戦の確定はできません。';
+  }
+  switch (n.status) {
+    case 'connecting': return '再接続しています。';
+    case 'auth_error': return 'アカウントの確認ができませんでした。再接続してください。';
+    case 'server_error': return 'オンラインサービスへ接続できません。時間をおいて再接続してください。';
+    case 'offline': return '接続が切れています。再接続してください。';
+    default: return null;
+  }
 }
 
 /** 接続をやり直す。押した直後から「さがしています」に戻す。 */
@@ -8257,6 +8306,27 @@ class SupaNet {
     this._setStatus('offline');
   }
 
+  /**
+   * このアカウントから出る（§44）。
+   *
+   * 端末の保存へ切り替えるのではなく、何も持たない状態へ戻す。
+   * 次につなぐと新しいゲストが作られる。
+   */
+  async signOut() {
+    const token = this.session?.access_token || null;
+    this.disconnect();
+    this.view = null;
+    this._clearSession();
+    if (token && this.config) {
+      // 相手側の取り消しは待たない。手元の鍵を捨てた時点で出られている。
+      fetch(`${this.config.url}/auth/v1/logout`, {
+        method: 'POST',
+        headers: { apikey: this.config.anonKey, Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
+    return { ok: true };
+  }
+
   /* ───────────────────────── 定期取得 ───────────────────────── */
 
   _interval() {
@@ -11692,7 +11762,7 @@ function resetInvited() { state.invited = new Set(); }
 return { resetFriendsView, renderFriends, renderNotifications, openSpectate, renderSpectate, inviteFriendsCard, resetInvited };
 });
 __def("views/settings.js", function (__req) {
-/** 設定：音量 / 名前 / 保存（書き出し・読み込み・初期化）/ モード切替 */
+/** 設定：アカウント / 着手前確認 / 音量 / 季節エフェクト / 端末の保存 */
 
 const { el, toast, confirmDialog, saveFile } = __req("util.js");
 const { audio } = __req("audio.js");
@@ -11724,6 +11794,21 @@ function accountCard(ctx) {
     el('div', { class: 'kv' }, [el('span', { text: '表示名' }), el('b', { text: p?.name || '旅人' })]),
     el('p', { class: 'muted', text: 'ペリカ・所持品・着せ替え・物語の進行・戦績はアカウントに保存されます。別の端末から同じアカウントで入れば、同じ続きから遊べます。' }),
     el('p', { class: 'muted', text: 'いまはゲストとして遊んでいます。ブラウザのデータを消すとこのアカウントへ戻れなくなることがあります。連携（Apple・Google・メール）は準備中です。' }),
+    ctx.onlineKind === 'supabase'
+      ? el('button', {
+        class: 'btn sub small', type: 'button', text: 'このアカウントから出る',
+        onclick: async () => {
+          const yes = await confirmDialog({
+            title: 'このアカウントから出ますか',
+            message: 'ゲストのままでは、出たあとに同じ資産へ戻れません。次に入るときは新しいゲストとして始まります。',
+            confirmLabel: '出る', cancelLabel: 'やめる', danger: true,
+          });
+          if (!yes) return;
+          const r = await ctx.api.signOut();
+          if (!r.ok) toast(r.message || 'ログアウトできませんでした。', 'error');
+        },
+      })
+      : null,
   ]);
 }
 
