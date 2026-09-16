@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#14432f">
 <title>TRIAD — 超次元五目</title>
 <style>
@@ -589,6 +589,566 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
   .friend-actions .btn.small { padding: 5px 8px; font-size: 11px; }
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   TRIAD Design System v1 — 和のトークン
+   既存のスタイル要素の末尾、その終端タグの直前へそのまま追記する。
+   既存トークン（--green-900/800/700/500/200/100・--cream・--cream-2・--ink・
+   --ink-soft・--sumi・--accent・--gold・--p1..--p3・--radius・--shadow・
+   --nav-h・--header-h・--font・--font-ui）は 1 つも消していない。
+   <html> に data-theme が付くまで、画面は今までどおりの生成り基調で動く。
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ───── 1. テーマに依存しない土台（書体・寸法・時間・盤面の意味色） ───── */
+:root {
+  /* 書体：外部フォント無し。日本語環境に実在する家族だけを並べる。
+     筆文字風＝見出し明朝／教科書体／行書体を上から拾い、無ければ明朝に落ちる。 */
+  --font-brush:
+    "Toppan Bunkyu Midashi Mincho", "TsukuBRdGothic",
+    "Klee", "Klee One", "HGP行書体", "HG行書体",
+    "Yu Mincho Demibold", "Hiragino Mincho ProN", "YuMincho", "Yu Mincho",
+    "Noto Serif JP", "Noto Serif CJK JP", serif;
+  --font-mincho:
+    "Hiragino Mincho ProN", "Toppan Bunkyu Mincho", "Yu Mincho", YuMincho,
+    "Noto Serif JP", "Noto Serif CJK JP", "MS PMincho", serif;
+  --font-gothic:
+    -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Yu Gothic UI", "Yu Gothic", Meiryo, "Segoe UI",
+    system-ui, sans-serif;
+  --font-num: var(--font-gothic);
+
+  /* 文字サイズ（§48：ボタン・本文は 16px 相当を基準） */
+  --fs-1: 11px;   /* 注記・最小の札 */
+  --fs-2: 12px;   /* muted 本文 */
+  --fs-3: 13px;
+  --fs-4: 14px;
+  --fs-5: 16px;   /* 本文・ボタンの基準。入力欄も 16px 未満にしない（iOS の自動ズーム回避） */
+  --fs-6: 18px;
+  --fs-7: 22px;
+  --fs-8: 26px;
+  --fs-btn: clamp(14px, 4.2vw, 16px);      /* 320px でも折れない可変ボタン文字 */
+  --fs-title: clamp(26px, 8.4vw, 40px);    /* 筆文字の大見出し */
+  --fs-title-sm: clamp(18px, 5.4vw, 24px);
+  --lh-tight: 1.25;
+  --lh-base: 1.55;
+  --lh-loose: 1.75;
+  --ls-brush: .16em;
+  --ls-ui: .02em;
+
+  /* 余白（4px 刻み） */
+  --sp-1: 4px;  --sp-2: 6px;  --sp-3: 8px;  --sp-4: 12px;
+  --sp-5: 16px; --sp-6: 22px; --sp-7: 32px; --sp-8: 44px;
+  --gutter: clamp(10px, 3.2vw, 16px);
+  --tap: 44px;                              /* 最小タップ領域 */
+
+  /* 角丸 */
+  --r-1: 4px; --r-2: 8px; --r-3: 12px; --r-4: 16px; --r-5: 22px; --r-pill: 999px;
+
+  /* 時間（§54：0.15〜0.4 秒）。--dur-scale を data-fx が動かす。 */
+  --dur-scale: 1;
+  --dur-1: calc(.15s * var(--dur-scale));   /* 押下・aria-pressed の切替 */
+  --dur-2: calc(.22s * var(--dur-scale));   /* チップ・札の出現 */
+  --dur-3: calc(.30s * var(--dur-scale));   /* カード・ダイアログ */
+  --dur-4: calc(.40s * var(--dur-scale));   /* 画面揺れ・大きな強調 */
+  --ease-out: cubic-bezier(.22, .80, .30, 1);
+  --ease-in:  cubic-bezier(.50, 0, .85, .30);
+  --ease-std: cubic-bezier(.40, 0, .20, 1);
+
+  /* ── 盤面の意味色（§69）────────────────────────────────────
+     ここは data-theme でも data-fx でも上書きしない。
+     石そのものの色は shared/constants.js の SEAT_COLORS が正で、
+     下は UI 側の点・枠・凡例を石と同じ意味に見せるための控え。 */
+  --seat-1: #2f9a68;  --seat-1-deep: #1f6f4a;   /* 深緑 */
+  --seat-2: #d75b43;  --seat-2-deep: #b5462f;   /* 朱   */
+  --seat-3: #5390cf;  --seat-3-deep: #2f5d94;   /* 藍   */
+  --mark-focus:  #f5e6b0;              /* タップした交点 */
+  --mark-last:   #d9b75c;              /* 直前の手 */
+  --mark-cand:   rgba(217, 183, 92, .60); /* 置ける交点 */
+  --mark-win:    #ffe9a3;              /* 勝ちライン */
+  --mark-ward:   #6aa3d8;              /* 結界 */
+  --mark-freeze: #a8dcf0;              /* 氷結 */
+  --mark-target: #e0533c;              /* 予告対象 */
+  --mark-turn:   #d9b75c;              /* 現在手番 */
+}
+
+/* ───── 2. 明（和紙）: 既定。既存の生成り基調をそのまま言い換える ───── */
+:root {
+  --bg-1: #e6ddc8;          /* 最奥 */
+  --bg-2: #efe7d5;          /* 画面の地 */
+  --bg-3: #f4efe1;          /* 一段上の地 */
+  --surface-1: #fffdf6;     /* 和紙の面（カード） */
+  --surface-2: #f7f2e4;     /* 面の中の一段 */
+  --surface-3: #fffefa;     /* 浮いた面（ダイアログ） */
+  --surface-inset: #fbf8ee; /* 凹み（入力欄・ゲージの溝） */
+  --surface-urushi: #14432f;/* 漆の面（ヘッダー・ナビ・トースト） */
+  --on-urushi: #f4eee2;
+
+  --fg-1: #23301f;  /* 主 */
+  --fg-2: #4c5644;  /* 副 */
+  --fg-3: #6f7766;  /* 薄（12px でも AA を満たす下限） */
+  --fg-4: #9aa091;  /* 装飾専用。本文には使わない */
+
+  --kin: #a5811f;  --kin-bright: #d9b75c;  --kin-deep: #6f560f;  --kin-ink: #fffaf0;
+  --shu: #b5402f;  --shu-deep: #8c2a1c;    --shu-ink: #fff5f1;
+  --ai:  #2f5d94;  --ai-deep:  #1b3a60;    --ai-ink:  #f2f7fd;
+  --shiro: #ffffff;
+  --ok:   #2b7d4f;  --ok-deep:  #1b5a36;
+  --warn: #9a6c10;  --warn-deep: #6b4a08;
+  --danger: var(--shu);
+
+  --line-1: rgba(36, 48, 31, .10);   /* 仕切り */
+  --line-2: rgba(36, 48, 31, .18);   /* 枠     */
+  --line-3: rgba(36, 48, 31, .32);   /* 強い枠 */
+  --line-kin:   rgba(165, 129, 31, .45);
+  --line-kin-2: rgba(165, 129, 31, .90);
+  --line-shu:   rgba(181, 64, 47, .55);
+
+  --shadow-1: 0 1px 2px rgba(20, 45, 30, .12);
+  --shadow-2: 0 4px 14px rgba(20, 45, 30, .16);
+  --shadow-3: 0 14px 40px rgba(20, 45, 30, .24);
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, .70);
+  --glow-kin: 0 0 0 1px rgba(165, 129, 31, .45), 0 0 12px rgba(165, 129, 31, .16);
+
+  --fill-primary: linear-gradient(180deg, #24815a, #1a6243);
+  --fill-sub:     linear-gradient(180deg, #fffefa, #f4efe1);
+  --fill-gold:    linear-gradient(180deg, #e2c569, #b08d22);
+  --fill-danger:  linear-gradient(180deg, #c04a37, #8c2a1c);
+  --fill-urushi:  linear-gradient(180deg, var(--green-800), var(--green-900));
+  --kinpaku: linear-gradient(115deg,
+    #8a6a18 0%, #d9b75c 16%, #f7ecc4 30%, #c99f31 46%,
+    #f2e0aa 62%, #a07f2a 80%, #d9b75c 100%);
+
+  --washi-grain:
+    repeating-linear-gradient(97deg, rgba(255,255,255,.35) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(7deg,  rgba(120,100,60,.045) 0 1px, transparent 1px 4px),
+    radial-gradient(70% 45% at 18% 8%,  rgba(63,143,92,.08), transparent 70%),
+    radial-gradient(60% 45% at 86% 92%, rgba(20,67,47,.08), transparent 70%);
+}
+
+/* ───── 3. 暗（墨）: 指示書の基調（黒 / 濃紺 / 深緑 / 焦茶 + 金朱白藍） ───── */
+:root[data-theme="sumi"] {
+  --bg-1: #070a09;
+  --bg-2: #0e1211;
+  --bg-3: #161d1a;
+  --surface-1: #1a221e;
+  --surface-2: #212b26;
+  --surface-3: #243029;
+  --surface-inset: #0c100f;
+  --surface-urushi: #0a0e0d;
+  --on-urushi: #f4eee2;
+
+  --fg-1: #f4eee2;   /* 対 --surface-1 で 14.3:1 */
+  --fg-2: #cbc3b4;   /* 9.7:1 */
+  --fg-3: #9a9284;   /* 5.4:1（12px の muted でも AA） */
+  --fg-4: #6d6961;   /* 罫線・装飾のみ */
+
+  --kin: #d9b75c;  --kin-bright: #f2e0aa;  --kin-deep: #a07f2a;  --kin-ink: #2a1e05;
+  --shu: #e05a46;  --shu-deep: #a5311f;    --shu-ink: #fff4f0;   /* 4.7:1 */
+  --ai:  #6aa3d8;  --ai-deep:  #1d3a5c;    --ai-ink:  #eef5fc;   /* 6.2:1 */
+  --shiro: #f8f4ec;
+  --ok:   #5fba7e;  --ok-deep:  #1f6f4a;
+  --warn: #e9b13f;  --warn-deep: #8a5e12;
+  --danger: var(--shu);
+
+  --line-1: rgba(244, 238, 226, .10);
+  --line-2: rgba(244, 238, 226, .20);
+  --line-3: rgba(244, 238, 226, .34);
+  --line-kin:   rgba(217, 183, 92, .42);
+  --line-kin-2: rgba(217, 183, 92, .85);
+  --line-shu:   rgba(224, 90, 70, .55);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .55);
+  --shadow-2: 0 6px 18px rgba(0, 0, 0, .50);
+  --shadow-3: 0 18px 48px rgba(0, 0, 0, .60);
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, .06);
+  --glow-kin: 0 0 0 1px rgba(217, 183, 92, .55), 0 0 16px rgba(217, 183, 92, .20);
+
+  --fill-primary: linear-gradient(180deg, #2a8259, #17563a);
+  --fill-sub:     linear-gradient(180deg, #232e28, #1a221e);
+  --fill-gold:    linear-gradient(180deg, #e2c569, #a07f2a);
+  --fill-danger:  linear-gradient(180deg, #c04434, #7d2216);
+  --fill-urushi:  linear-gradient(180deg, #111715, #070a09);
+
+  --washi-grain:
+    repeating-linear-gradient(97deg, rgba(244,238,226,.016) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(7deg,  rgba(0,0,0,.20) 0 1px, transparent 1px 4px),
+    radial-gradient(70% 45% at 18% 8%,  rgba(106,163,216,.05), transparent 70%),
+    radial-gradient(60% 45% at 86% 92%, rgba(217,183,92,.045), transparent 70%);
+}
+
+/* 端末が暗配色で、利用者が「和紙（明）」を選んでいないときは墨にする */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="washi"]) {
+    --bg-1: #070a09; --bg-2: #0e1211; --bg-3: #161d1a;
+    --surface-1: #1a221e; --surface-2: #212b26; --surface-3: #243029;
+    --surface-inset: #0c100f; --surface-urushi: #0a0e0d;
+    --fg-1: #f4eee2; --fg-2: #cbc3b4; --fg-3: #9a9284; --fg-4: #6d6961;
+    --kin: #d9b75c; --kin-bright: #f2e0aa; --kin-deep: #a07f2a; --kin-ink: #2a1e05;
+    --shu: #e05a46; --shu-deep: #a5311f;
+    --ai:  #6aa3d8; --ai-deep: #1d3a5c;
+    --ok: #5fba7e; --ok-deep: #1f6f4a; --warn: #e9b13f; --warn-deep: #8a5e12;
+    --line-1: rgba(244,238,226,.10); --line-2: rgba(244,238,226,.20); --line-3: rgba(244,238,226,.34);
+    --line-kin: rgba(217,183,92,.42); --line-kin-2: rgba(217,183,92,.85);
+    --shadow-1: 0 1px 2px rgba(0,0,0,.55);
+    --shadow-2: 0 6px 18px rgba(0,0,0,.50);
+    --shadow-3: 0 18px 48px rgba(0,0,0,.60);
+    --sheen: inset 0 1px 0 rgba(255,255,255,.06);
+  }
+}
+
+/* ───── 4. 地色の四季（画面単位で地を差し替える。黒 / 濃紺 / 深緑 / 焦茶） ───── */
+[data-ground="sumi"]   { --bg-2: #0e1211; }
+[data-ground="kon"]    { --bg-2: #0c1322; }  /* 濃紺：夜・オンライン */
+[data-ground="midori"] { --bg-2: #0b1a12; }  /* 深緑：対戦・盤 */
+[data-ground="cha"]    { --bg-2: #180f07; }  /* 焦茶：物語・蔵 */
+
+/* ───── 5. 演出品質（§23・§58）: <html data-fx="high|normal|low|off"> ───── */
+:root[data-fx="high"]   { --dur-scale: 1;    --fx-blur: 10px; --fx-decor: block; --fx-veil-max: .28; --fx-particle-scale: 1.5; }
+:root[data-fx="normal"] { --dur-scale: 1;    --fx-blur: 5px;  --fx-decor: block; --fx-veil-max: .22; --fx-particle-scale: 1; }
+:root[data-fx="low"] {
+  --dur-scale: .7; --fx-blur: 0px; --fx-decor: none; --fx-veil-max: .12; --fx-particle-scale: .35;
+  --washi-grain: none;
+  --glow-kin: 0 0 0 1px var(--line-kin);
+  --shadow-3: var(--shadow-2);
+}
+:root[data-fx="off"] {
+  --dur-scale: 0; --fx-blur: 0px; --fx-decor: none; --fx-veil-max: 0; --fx-particle-scale: 0;
+  --washi-grain: none;
+  --glow-kin: 0 0 0 1px var(--line-kin);
+  --shadow-2: var(--shadow-1);
+  --shadow-3: var(--shadow-1);
+}
+/* 装飾専用の層だけを落とす。文字で意味を伝える層（fx-banner / fx-energy）は残す。 */
+:root[data-fx="low"] .fx-node,
+:root[data-fx="off"] .fx-node { display: var(--fx-decor, block); }
+:root[data-fx="off"] .scene-fx { display: none; }
+.decor { display: var(--fx-decor, block); }
+/* 盤の上に重なる面は、品質にかかわらずこの上限を超えない（§69） */
+.fx-veil { opacity: var(--fx-veil-max, .22); }
+
+/* ───── 6. 画面の揺れ（§58）: <html data-shake="on|weak|off"> ───── */
+:root { --shake-amp: 6px; }
+:root[data-shake="on"]   { --shake-amp: 7px; }
+:root[data-shake="weak"] { --shake-amp: 3px; }
+:root[data-shake="off"]  { --shake-amp: 0px; }
+
+@keyframes triad-shake {
+  0%   { transform: translate3d(0, 0, 0); }
+  14%  { transform: translate3d(calc(var(--a) * -1),   calc(var(--a) * .35), 0); }
+  30%  { transform: translate3d(calc(var(--a) * .80),  calc(var(--a) * -.50), 0); }
+  46%  { transform: translate3d(calc(var(--a) * -.55), calc(var(--a) * .25), 0); }
+  64%  { transform: translate3d(calc(var(--a) * .38),  calc(var(--a) * -.18), 0); }
+  82%  { transform: translate3d(calc(var(--a) * -.18), 0, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+/* 揺らすのは盤の枠と演出レイヤーだけ。position:fixed のナビ・確定バーは動かさない。 */
+.is-shaking {
+  --a: calc(var(--shake-amp) * var(--shake-mul, 1));
+  animation: triad-shake var(--dur-4) var(--ease-out) both;
+  will-change: transform;
+}
+:root[data-shake="off"] .is-shaking { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-scale: 0; --shake-amp: 0px; --fx-particle-scale: 0; }
+  .is-shaking { animation: none !important; }
+}
+
+/* ───── 7. 書体のユーティリティ（§48） ───── */
+.t-brush {
+  font-family: var(--font-brush);
+  font-weight: 600;
+  letter-spacing: var(--ls-brush);
+  font-synthesis-weight: none;
+  /* にじみ：行書体が無い環境でも「墨」に見せるための極薄の二重影 */
+  text-shadow: 0 0 1px currentColor, 0 1px 2px rgba(0, 0, 0, .35);
+}
+.t-mincho { font-family: var(--font-mincho); }
+.t-ui     { font-family: var(--font-gothic); letter-spacing: var(--ls-ui); }
+.num {
+  font-family: var(--font-num);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: .01em;
+}
+.num-kin { color: var(--kin); }
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .num-kin {
+    background: var(--kinpaku);
+    -webkit-background-clip: text;
+            background-clip: text;
+    color: transparent;
+  }
+}
+
+.brush-title { position: relative; text-align: center; padding: var(--sp-4) 0 var(--sp-3); }
+.brush-title-main {
+  margin: 0;
+  font-family: var(--font-brush);
+  font-size: var(--fs-title);
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-brush);
+  color: var(--fg-1);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35), 0 0 18px rgba(217, 183, 92, .10);
+}
+.brush-title-sub {
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-gothic);
+  font-size: var(--fs-2);
+  color: var(--fg-3);
+  letter-spacing: .10em;
+}
+.brush-rule { display: block; width: min(220px, 62%); height: 10px; margin: var(--sp-2) auto 0; color: var(--kin); }
+.brush-rule svg { display: block; width: 100%; height: 100%; }
+.seal {                                    /* 落款（朱印）。文字は 1〜2 字。 */
+  display: inline-grid; place-items: center;
+  width: 30px; height: 30px; border-radius: var(--r-1);
+  background: var(--shu-deep); color: var(--shu-ink);
+  font-family: var(--font-brush); font-size: var(--fs-2); line-height: 1;
+  letter-spacing: 0; box-shadow: var(--shadow-1);
+}
+.sub-title {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-family: var(--font-mincho);
+  font-size: var(--fs-4); font-weight: 700;
+  letter-spacing: .08em; color: var(--fg-2);
+}
+
+/* ───── 8. 面のユーティリティ（和紙 / 漆 / 金縁） ───── */
+.s-washi {
+  background-color: var(--surface-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-3);
+  box-shadow: var(--sheen), var(--shadow-1);
+}
+.s-urushi {
+  background: var(--fill-urushi);
+  color: var(--on-urushi);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), var(--shadow-2);
+}
+.kin-frame {                               /* 細い金縁（二重線） */
+  border: 1px solid var(--line-kin-2);
+  box-shadow: inset 0 0 0 3px var(--surface-1), inset 0 0 0 4px var(--line-kin), var(--shadow-1);
+  border-radius: var(--r-3);
+}
+.kin-hairline { border: 1px solid var(--line-kin); border-radius: var(--r-2); }
+
+/* ───── 9. タップ領域の底上げ（全テーマ共通・44px 相当） ───── */
+.btn.small, .chip, .icon-btn { position: relative; }
+.btn.small::after, .chip::after, .icon-btn::after {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 50%;
+  height: max(100%, var(--tap));
+  transform: translateY(-50%);
+  border-radius: inherit;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   10. レガシーブリッジ
+   既存 CSS に直書きされているリテラル色（#fffdf6 / #fff / #fdf6e3 …）だけを
+   墨テーマのときに塗り替える。ここは移行用で、各コンポーネントを
+   新トークンで書き直したら、その分だけ削っていける。
+   ════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="sumi"] {
+  /* 既存トークンの再解釈。--ink は「明るい紙の上の墨」のままにする
+     （.scene は季節ごとの淡い地色を保つので、--ink を反転させると読めなくなる）。 */
+  --cream: #f4eee2;
+  --cream-2: rgba(244, 238, 226, .20);
+  --shadow: var(--shadow-2);
+  background-color: var(--bg-2);
+  background-image: var(--washi-grain);
+}
+:root[data-theme="sumi"] body {
+  background-color: transparent;
+  color: var(--fg-1);
+  background-image:
+    radial-gradient(120% 60% at 50% -10%, rgba(217, 183, 92, .07), transparent 60%),
+    radial-gradient(90% 50% at 50% 108%, rgba(31, 111, 74, .10), transparent 62%);
+}
+
+/* ヘッダー・ナビ */
+:root[data-theme="sumi"] .app-header {
+  background: var(--fill-urushi);
+  color: var(--on-urushi);
+  border-bottom: 1px solid var(--line-kin);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .5);
+}
+:root[data-theme="sumi"] .brand-name { font-family: var(--font-brush); color: var(--kin-bright); }
+:root[data-theme="sumi"] .brand-mark {
+  background: radial-gradient(circle at 35% 30%, var(--kin-bright), var(--kin) 55%, var(--kin-deep));
+}
+:root[data-theme="sumi"] .app-nav {
+  background: var(--fill-urushi);
+  border-top: 1px solid var(--line-kin);
+}
+:root[data-theme="sumi"] .app-nav button { color: var(--fg-3); }
+:root[data-theme="sumi"] .app-nav button[aria-current="page"] {
+  color: var(--kin-bright);
+  background: rgba(217, 183, 92, .10);
+  box-shadow: inset 0 2px 0 var(--kin);
+}
+:root[data-theme="sumi"] .app-nav button .nav-ico { font-family: var(--font-brush); }
+
+/* カード・見出し */
+:root[data-theme="sumi"] .card,
+:root[data-theme="sumi"] .seat-card,
+:root[data-theme="sumi"] .char-card,
+:root[data-theme="sumi"] .item-card,
+:root[data-theme="sumi"] .gacha-cell {
+  background: var(--surface-1);
+  border-color: var(--line-2);
+  color: var(--fg-1);
+  box-shadow: var(--sheen), var(--shadow-1);
+}
+:root[data-theme="sumi"] .card > h2,
+:root[data-theme="sumi"] .section-title { color: var(--kin); font-family: var(--font-mincho); }
+:root[data-theme="sumi"] .section-title::before { background: var(--kin); }
+:root[data-theme="sumi"] .muted { color: var(--fg-3); }
+
+/* ボタン */
+:root[data-theme="sumi"] .btn {
+  font-family: var(--font-gothic);
+  font-size: var(--fs-btn);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--fill-primary);
+  border-color: var(--line-kin);
+  color: var(--fg-1);
+  box-shadow: var(--sheen), var(--shadow-1);
+  transition: transform var(--dur-1) var(--ease-out), filter var(--dur-1) var(--ease-out);
+}
+:root[data-theme="sumi"] .btn.sub   { background: var(--fill-sub); border-color: var(--line-2); color: var(--fg-1); }
+:root[data-theme="sumi"] .btn.ghost { background: transparent; border-color: var(--line-2); color: var(--fg-2); }
+:root[data-theme="sumi"] .btn.gold  { background: var(--fill-gold); border-color: var(--kin-deep); color: var(--kin-ink); }
+:root[data-theme="sumi"] .btn.danger{ background: var(--fill-danger); border-color: var(--line-shu); color: var(--shu-ink); }
+:root[data-theme="sumi"] .btn:focus-visible,
+:root[data-theme="sumi"] .chip:focus-visible,
+:root[data-theme="sumi"] .icon-btn:focus-visible {
+  outline: 2px solid var(--kin-bright); outline-offset: 2px;
+}
+
+/* チップ・札 */
+:root[data-theme="sumi"] .chip {
+  background: var(--surface-2); border-color: var(--line-2); color: var(--fg-2);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+:root[data-theme="sumi"] .chip[aria-pressed="true"] {
+  background: var(--ok-deep); border-color: var(--line-kin-2); color: var(--fg-1);
+}
+:root[data-theme="sumi"] .pill.N   { background: var(--surface-2); color: var(--fg-2); }
+:root[data-theme="sumi"] .pill.dup { background: var(--surface-2); color: var(--fg-3); }
+:root[data-theme="sumi"] .pill.new { background: var(--shu-deep); color: var(--shu-ink); }
+:root[data-theme="sumi"] .hist-badge.win   { background: var(--ok-deep);  color: var(--fg-1); }
+:root[data-theme="sumi"] .hist-badge.lose  { background: var(--shu-deep); color: var(--shu-ink); }
+:root[data-theme="sumi"] .hist-badge.abort { background: var(--surface-2); color: var(--fg-3); }
+:root[data-theme="sumi"] .badge { border-color: var(--line-kin); color: var(--on-urushi); }
+:root[data-theme="sumi"] .badge[data-mode="ONLINE"] { background: var(--fill-gold); color: var(--kin-ink); }
+:root[data-theme="sumi"] .perica { background: rgba(217, 183, 92, .12); color: var(--on-urushi); }
+:root[data-theme="sumi"] .perica-mark { color: var(--kin-bright); }
+:root[data-theme="sumi"] .icon-btn { border-color: var(--line-2); color: var(--on-urushi); }
+:root[data-theme="sumi"] .icon-btn[aria-pressed="true"] { background: var(--shu-deep); border-color: transparent; }
+
+/* 報せ */
+:root[data-theme="sumi"] .notice {
+  background: var(--surface-2); color: var(--fg-2);
+  border-left-color: var(--kin); border-radius: var(--r-2);
+}
+:root[data-theme="sumi"] .notice.error { background: rgba(165, 49, 31, .18); border-left-color: var(--shu); color: var(--fg-1); }
+
+/* 入力 */
+:root[data-theme="sumi"] input[type="text"],
+:root[data-theme="sumi"] input[type="number"],
+:root[data-theme="sumi"] input[type="email"],
+:root[data-theme="sumi"] input[type="password"],
+:root[data-theme="sumi"] select {
+  background: var(--surface-inset);
+  border-color: var(--line-2);
+  color: var(--fg-1);
+  font-size: var(--fs-5);                 /* 16px。iOS で入力時に拡大されない */
+}
+:root[data-theme="sumi"] input::placeholder { color: var(--fg-4); }
+:root[data-theme="sumi"] label.field > span { color: var(--fg-3); }
+
+/* ダイアログ・トースト・確定バー */
+:root[data-theme="sumi"] .dialog-layer { background: rgba(4, 7, 6, .70); }
+:root[data-theme="sumi"] .dialog {
+  background: var(--surface-3); color: var(--fg-1);
+  border: 1px solid var(--line-kin); box-shadow: var(--shadow-3);
+}
+:root[data-theme="sumi"] .dialog h3 { color: var(--kin); font-family: var(--font-mincho); }
+:root[data-theme="sumi"] .toast {
+  background: var(--surface-urushi); color: var(--fg-1);
+  border: 1px solid var(--line-kin); box-shadow: var(--shadow-2);
+}
+:root[data-theme="sumi"] .toast.error { background: var(--shu-deep); border-color: var(--line-shu); color: var(--shu-ink); }
+:root[data-theme="sumi"] .action-bar {
+  background: color-mix(in srgb, var(--surface-urushi) 92%, transparent);
+  border-top: 1px solid var(--line-kin);
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, .55);
+  color: var(--fg-1);
+}
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  :root[data-theme="sumi"] .action-bar { background: var(--surface-urushi); }
+}
+:root[data-theme="sumi"] .fx-banner {
+  background: var(--surface-urushi); color: var(--kin-bright);
+  border: 1px solid var(--line-kin); font-family: var(--font-brush);
+}
+
+/* 表・ゲージ・行 */
+:root[data-theme="sumi"] .table th,
+:root[data-theme="sumi"] .table td,
+:root[data-theme="sumi"] .friend-row,
+:root[data-theme="sumi"] .hist-row,
+:root[data-theme="sumi"] .notif-row { border-color: var(--line-1); }
+:root[data-theme="sumi"] .notif-row.unread { border-left-color: var(--shu); }
+:root[data-theme="sumi"] .bar,
+:root[data-theme="sumi"] .usage-track,
+:root[data-theme="sumi"] .item-card .thumb {
+  background: var(--surface-inset);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+}
+:root[data-theme="sumi"] .bar > i,
+:root[data-theme="sumi"] .usage-track > i { background: var(--ok); }
+:root[data-theme="sumi"] .energy-dots i { background: var(--surface-inset); box-shadow: inset 0 0 0 1px var(--line-1); }
+:root[data-theme="sumi"] .energy-dots i.on { background: var(--kin); box-shadow: 0 0 6px rgba(217, 183, 92, .45); }
+
+/* 盤・席（§69：選択中の席は金の縁で示す。石の色は触らない） */
+:root[data-theme="sumi"] .board-wrap {
+  background: var(--surface-urushi);
+  border-color: var(--line-kin);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55), var(--shadow-2);
+}
+:root[data-theme="sumi"] .seat-card[data-active="true"] {
+  border-color: var(--line-kin-2);
+  box-shadow: var(--glow-kin);
+}
+:root[data-theme="sumi"] .char-card[aria-pressed="true"],
+:root[data-theme="sumi"] .item-card[aria-pressed="true"] {
+  border-color: var(--line-kin-2);
+  box-shadow: var(--glow-kin);
+}
+:root[data-theme="sumi"] .gacha-cell.is-new { box-shadow: 0 0 0 2px var(--shu) inset; }
+:root[data-theme="sumi"] .seat-card[data-seat="1"] .seat-dot { background: var(--seat-1); }
+:root[data-theme="sumi"] .seat-card[data-seat="2"] .seat-dot { background: var(--seat-2); }
+:root[data-theme="sumi"] .seat-card[data-seat="3"] .seat-dot { background: var(--seat-3); }
+
+/* 物語の情景は季節の地色が主役なので反転させない。枠だけ馴染ませる。 */
+:root[data-theme="sumi"] .scene { border-color: var(--line-kin); box-shadow: var(--shadow-1); }
+
+/* ───── 11. 極小幅（320px）の詰め ───── */
+@media (max-width: 360px) {
+  :root { --fs-title: clamp(24px, 9vw, 32px); }
+  .app-header { gap: 4px; padding-left: 8px; padding-right: 8px; }
+  .icon-btn { width: 34px; height: 34px; }
+  .perica { padding: 3px 7px; font-size: var(--fs-2); }
+  .btn { padding-left: 10px; padding-right: 10px; }
+  .turn-strip { gap: 4px; }
+  .seat-card { padding: 5px 4px; }
+  .brush-rule { width: 72%; }
+}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -648,7 +1208,7 @@ __def("app.js", function (__req) {
  * TRIAD — アプリ本体（ルーティング・ヘッダー・ローカル/オンラインの振り分け）
  */
 
-const { el, clear, toast, fmt, newRequestId, shareLink, inAppBrowser, setEffectLevel, effectLevel } = __req("util.js");
+const { el, clear, toast, fmt, newRequestId, shareLink, inAppBrowser, setEffectLevel, effectLevel, applyDisplayAttrs } = __req("util.js");
 const { audio } = __req("audio.js");
 const { preferences } = __req("preferences.js");
 const { fx } = __req("fx.js");
@@ -1219,6 +1779,8 @@ function currentStoryTrack() {
 /* ───────────────────────── 起動 ───────────────────────── */
 
 function boot() {
+  // 最初の描画より先に地色・演出量・揺れを <html> へ載せ、ちらつきを防ぐ
+  applyDisplayAttrs();
   const loaded = localStore.load();
   if (!loaded.ok && loaded.reason === 'corrupt') {
     toast('保存データを読み取れませんでした。設定画面から対応できます。', 'error', 6000);
@@ -1578,7 +2140,7 @@ function effectLevel() {
   if (_effectLevel) return _effectLevel;
   try {
     const v = localStorage.getItem('triad.effects.v1');
-    _effectLevel = ['off', 'low', 'normal'].includes(v) ? v : 'normal';
+    _effectLevel = ['off', 'low', 'normal', 'high'].includes(v) ? v : 'normal';
   } catch {
     _effectLevel = 'normal';
   }
@@ -1586,12 +2148,122 @@ function effectLevel() {
 }
 
 function setEffectLevel(v) {
-  _effectLevel = ['off', 'low', 'normal'].includes(v) ? v : 'normal';
+  _effectLevel = ['off', 'low', 'normal', 'high'].includes(v) ? v : 'normal';
   try { localStorage.setItem('triad.effects.v1', _effectLevel); } catch { /* ignore */ }
+  applyDisplayAttrs();
   return _effectLevel;
 }
 
-return { el, clear, qs, toast, confirmDialog, shareLink, showUrlDialog, inAppBrowser, fmt, pct, dateLabel, prefersReducedMotion, saveFile, newRequestId, effectLevel, setEffectLevel };
+/* ───────── 見た目の設定（テーマ / 画面揺れ）───────── */
+
+const THEMES = ['sumi', 'washi'];
+let _theme = null;
+
+/** 地色。既定は墨（暗）。端末ごとの好みなのでアカウントへは送らない。 */
+function themeName() {
+  if (_theme) return _theme;
+  try {
+    const v = localStorage.getItem('triad.theme.v1');
+    _theme = THEMES.includes(v) ? v : 'sumi';
+  } catch {
+    _theme = 'sumi';
+  }
+  return _theme;
+}
+
+function setTheme(v) {
+  _theme = THEMES.includes(v) ? v : 'sumi';
+  try { localStorage.setItem('triad.theme.v1', _theme); } catch { /* ignore */ }
+  applyDisplayAttrs();
+  return _theme;
+}
+
+const SHAKE_LEVELS = ['on', 'weak', 'off'];
+let _shake = null;
+
+/** 画面の揺れ。既定は「弱」。揺れで気分が悪くなる人がいるので強くしない。 */
+function shakeLevel() {
+  if (_shake) return _shake;
+  try {
+    const v = localStorage.getItem('triad.shake.v1');
+    _shake = SHAKE_LEVELS.includes(v) ? v : 'weak';
+  } catch {
+    _shake = 'weak';
+  }
+  return _shake;
+}
+
+function setShakeLevel(v) {
+  _shake = SHAKE_LEVELS.includes(v) ? v : 'weak';
+  try { localStorage.setItem('triad.shake.v1', _shake); } catch { /* ignore */ }
+  applyDisplayAttrs();
+  return _shake;
+}
+
+/**
+ * 見た目の設定を <html> の data 属性に載せるだけの関数。
+ * 色・時間・揺れ幅の分岐は CSS 側だけで行う（JS から色を書かない）。
+ */
+function applyDisplayAttrs() {
+  const r = document.documentElement;
+  if (!r) return;
+  r.dataset.theme = themeName();
+  r.dataset.fx = effectLevel();
+  // 端末が「動きを減らす」設定なら、利用者の選択より安全側を優先する
+  r.dataset.shake = prefersReducedMotion() ? 'off' : shakeLevel();
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', themeName() === 'sumi' ? '#0a0e0d' : '#14432f');
+}
+
+/**
+ * 画面を短く揺らす。
+ * 揺らすのは盤の枠と演出レイヤーだけ。position:fixed のナビ・確定バーを
+ * 含む要素に transform を掛けると固定が壊れてタップできなくなるため、
+ * #view-root や #app は決して揺らさない。
+ * @param {number} strength 0.5〜2
+ */
+function shakeScreen(strength = 1) {
+  if (document.documentElement.dataset.shake === 'off') return;
+  const mul = String(Math.max(0.5, Math.min(2, Number(strength) || 1)));
+  for (const n of [document.querySelector('.board-wrap'), document.getElementById('fx-layer')]) {
+    if (!n) continue;
+    n.style.setProperty('--shake-mul', mul);
+    n.classList.remove('is-shaking');
+    void n.offsetWidth;            // 連続発火でもアニメーションを撃ち直す
+    n.classList.add('is-shaking');
+    setTimeout(() => { n.classList.remove('is-shaking'); n.style.removeProperty('will-change'); }, 460);
+  }
+}
+
+/* ───────── 筆文字の見出し（外部フォント無し。SVG で かすれ を描く）───────── */
+
+const BRUSH_RULE_SVG = '<svg viewBox="0 0 240 10" preserveAspectRatio="none" focusable="false" aria-hidden="true">'
+  + '<path d="M3 6 C 42 2.4, 78 8.2, 118 4.4 S 200 2.2, 237 5.2" fill="none" stroke="currentColor"'
+  + ' stroke-width="3.4" stroke-linecap="round" opacity=".9"/>'
+  + '<path d="M12 7.6 C 54 5.2, 96 9, 150 6.2 S 214 4.2, 231 6.8" fill="none" stroke="currentColor"'
+  + ' stroke-width="1.1" stroke-linecap="round" opacity=".45" stroke-dasharray="14 5 3 7"/>'
+  + '</svg>';
+
+/**
+ * 筆文字風の大見出し。
+ * @param {string} text 見出し
+ * @param {{sub?:string, seal?:string}} opts sub=添え書き / seal=落款の字（1〜2字）
+ */
+function brushTitle(text, opts = {}) {
+  return el('div', { class: 'brush-title' }, [
+    el('h1', { class: 'brush-title-main', text: String(text) }),
+    el('span', { class: 'brush-rule', 'aria-hidden': 'true', html: BRUSH_RULE_SVG }),
+    opts.sub ? el('p', { class: 'brush-title-sub', text: String(opts.sub) }) : null,
+    opts.seal ? el('span', { class: 'seal', 'aria-hidden': 'true', text: String(opts.seal).slice(0, 2) }) : null,
+  ]);
+}
+
+/** 数値は太字・等幅。金箔にしたいときは gold:true。 */
+function numText(value, opts = {}) {
+  return el('b', { class: `num${opts.gold ? ' num-kin' : ''}`, text: String(value) });
+}
+
+return { el, clear, qs, toast, confirmDialog, shareLink, showUrlDialog, inAppBrowser, fmt, pct, dateLabel, prefersReducedMotion, saveFile, newRequestId, effectLevel, setEffectLevel, themeName, setTheme, shakeLevel, setShakeLevel, applyDisplayAttrs, shakeScreen, brushTitle, numText };
 });
 __def("preferences.js", function (__req) {
 /** 端末ごとのUI設定。セーブデータやオンライン資産とは分離する。 */
@@ -2493,7 +3165,7 @@ const SSE_HEARTBEAT_MS = 20_000;
 const FX_DURATION_MS = 1100; // 通常演出は約 1.1 秒
 const DEFAULT_AUDIO = Object.freeze({ bgm: 0.24, sfx: 0.40, ambient: 0.30, muted: false });
 /** 季節エフェクトの量（物語の天候表現）。OFF でも固定背景から季節が分かる。 */
-const EFFECT_LEVELS = Object.freeze(['off', 'low', 'normal']);
+const EFFECT_LEVELS = Object.freeze(['off', 'low', 'normal', 'high']);
 const DEFAULT_EFFECT_LEVEL = 'normal';
 const STORAGE_EFFECT_KEY = 'triad.effects.v1';
 const BPM_HOME = 84;
@@ -11912,7 +12584,7 @@ __def("views/settings.js", function (__req) {
 const { el, toast, confirmDialog, saveFile } = __req("util.js");
 const { audio } = __req("audio.js");
 const { preferences } = __req("preferences.js");
-const { effectLevel, setEffectLevel } = __req("util.js");
+const { effectLevel, setEffectLevel, themeName, setTheme, shakeLevel, setShakeLevel } = __req("util.js");
 const { DEFAULT_AUDIO } = __req("../../shared/constants.js");
 
 /** 接続先の呼び名。どこへ保存されているのかを一言で示す。 */
@@ -12049,13 +12721,31 @@ function renderSettings(root, ctx) {
   ]));
 
   root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: '季節エフェクト' }),
-    el('p', { class: 'muted', text: '物語の花びら・雨・雪などの量です。OFF にしても、背景の色と情景の文で季節は分かります。盤面の見え方や勝敗には影響しません。' }),
+    el('h2', { class: 'section-title', text: '見た目' }),
+
+    el('h3', { class: 'sub-title', text: '地色' }),
     el('div', { class: 'chips' }, [
+      themeChip(ctx, '墨（暗）', 'sumi'),
+      themeChip(ctx, '和紙（明）', 'washi'),
+    ]),
+    el('p', { class: 'muted', text: '盤の線・石の色・結界・氷結・予告のしるしは、どちらの地色でも同じに保たれます。' }),
+
+    el('h3', { class: 'sub-title', text: '演出の量' }),
+    el('div', { class: 'chips' }, [
+      effectChip(ctx, '高', 'high'),
       effectChip(ctx, '標準', 'normal'),
       effectChip(ctx, '低', 'low'),
       effectChip(ctx, 'OFF', 'off'),
     ]),
+    el('p', { class: 'muted', text: '物語の花びら・雨・雪などの量と、スキルの光の強さです。OFF にしても、背景の色と情景の文で季節は分かります。盤面の見え方や勝敗には影響しません。' }),
+
+    el('h3', { class: 'sub-title', text: '画面の揺れ' }),
+    el('div', { class: 'chips' }, [
+      shakeChip(ctx, '通常', 'on'),
+      shakeChip(ctx, '弱', 'weak'),
+      shakeChip(ctx, 'OFF', 'off'),
+    ]),
+    el('p', { class: 'muted', text: '大きなスキルが決まったときだけ、盤の枠が短くゆれます。下のメニューと確定バーは揺れません。端末側で「視差効果を減らす」を選んでいる場合は、この設定にかかわらず揺れません。' }),
   ]));
 
   const nameInput = el('input', { type: 'text', maxlength: '16', value: ctx.profile().name || '' });
@@ -12186,6 +12876,24 @@ function saveSettingsError(reason) {
   if (reason === 'locked') return '別のタブが保存を使用中のため変更できません。';
   if (reason === 'quota') return '保存容量が不足しているため変更できません。';
   return '保存できなかったため変更は反映していません。';
+}
+
+function themeChip(ctx, label, value) {
+  return el('button', {
+    class: 'chip', type: 'button',
+    'aria-pressed': themeName() === value ? 'true' : 'false',
+    text: label,
+    onclick: () => { setTheme(value); ctx.refresh(); },
+  });
+}
+
+function shakeChip(ctx, label, value) {
+  return el('button', {
+    class: 'chip', type: 'button',
+    'aria-pressed': shakeLevel() === value ? 'true' : 'false',
+    text: label,
+    onclick: () => { setShakeLevel(value); ctx.refresh(); },
+  });
 }
 
 function effectChip(ctx, label, value) {
@@ -12488,7 +13196,10 @@ function weatherParticles(weather) {
     snow: 16, blizzard: 26, ash: 12, firestorm: 16, fog: 8, aurora: 6,
   };
   const base = counts[weather] || 0;
-  const n = level === 'low' ? Math.ceil(base / 3) : base;
+  const n = level === 'off' ? 0
+    : level === 'low' ? Math.ceil(base / 3)
+    : level === 'high' ? Math.round(base * 1.5)
+    : base;
   if (!n) return null;
   const wrap = el('div', { class: 'scene-fx', 'aria-hidden': 'true' });
   for (let i = 0; i < n; i += 1) {

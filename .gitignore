@@ -1,2 +1,4 @@
 dist/
 supabase/.temp/
+.design/
+.tmpedit/
