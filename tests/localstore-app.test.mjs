@@ -1078,7 +1078,7 @@ test('接続先が無ければ遊ばせず、端末の保存へ落とさない',
     ), 'オフラインの案内が出る');
     findButton(root, '再接続');
     assert.equal(
-      walkNodes(root).some((node) => node.tagName === 'BUTTON' && node.textContent === '物語（1対1）'),
+      walkNodes(root).some((node) => node.tagName === 'BUTTON' && /物語/.test(node.textContent || '')),
       false,
       'ホームの遊ぶ導線は出さない',
     );
@@ -1305,7 +1305,7 @@ test('遊んでいる最中に通信が切れたら、黙って操作不能に�
     assert.ok(banner(), '不調のときは状態を出す');
     findButton(root, '再接続');
     // 盤面や画面は出したままにする（操作不能で黙らせない）
-    assert.ok(walkNodes(root).some((n) => n.tagName === 'BUTTON' && n.textContent === '物語（1対1）'), 'ホームは出たまま');
+    assert.ok(walkNodes(root).some((n) => n.tagName === 'BUTTON' && /物語/.test(n.textContent || '')), 'ホームは出たまま');
   });
 });
 

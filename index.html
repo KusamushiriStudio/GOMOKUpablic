@@ -1149,6 +1149,342 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
   .brush-rule { width: 72%; }
 }
 
+/* ═══════════════ ホーム：和の情景（§2〜§6 §12〜§15 §53 §76） ═══════════════
+   ・色の実体はこのブロックにだけ置く。JS と SVG は var() しか書かない。
+   ・セレクタは .home- / .stage- / .hero- / .mokufuda に限定。
+     .board-svg / .stone / .hit / .seat-card / .char-art には一切触れない（§69）。
+   ・スタイル要素の終端 の直前（現在の 592 行目付近、`.notif-row .friend-actions` の下）へ追加する。 */
+
+:root {
+  /* 漆・墨・金・和紙 */
+  --urushi: #120e0c;
+  --urushi-2: #1d1613;
+  --kinpaku: #e8c561;
+  --kin-2: #a9821d;
+  --gofun: #f7f2e6;
+  --washi: #efe6d2;
+  --hero-shadow: rgba(0, 0, 0, .42);
+  /* 木札（木地） */
+  --kiji-1: #6b4a2c;
+  --kiji-2: #4a3220;
+  /* 舞台の高さ（媒体ごとに上書きする唯一の寸法） */
+  --stage-h: clamp(250px, 44svh, 392px);
+  --stage-floor: 12%;
+}
+
+/* ───────── §2 身分帯（アイコン・名前・Lv・ペリカ） ───────── */
+.home-topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; margin-bottom: 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--washi), var(--cream-2));
+  border: 1px solid var(--kin-2);
+  box-shadow: var(--shadow);
+}
+.home-avatar {
+  flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
+  overflow: hidden; border: 2px solid var(--kinpaku);
+  background: var(--green-100);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .2);
+}
+/* characterSvg（120×150）の顔だけを丸窓に収める */
+.home-avatar svg { width: 200%; height: auto; display: block; margin: -4% 0 0 -50%; }
+.home-id { flex: 1 1 auto; min-width: 0; }
+.home-name {
+  font-family: var(--font); font-size: 16px; letter-spacing: .06em;
+  color: var(--green-900);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.home-lv { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11px; color: var(--ink-soft); }
+.home-lv .bar { flex: 1 1 auto; min-width: 40px; height: 5px; }
+.home-lv b { font-variant-numeric: tabular-nums; }
+.home-coin {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  min-height: 34px; padding: 5px 11px; border-radius: 999px;
+  background: var(--urushi); color: var(--kinpaku);
+  border: 1px solid var(--kin-2);
+  font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.home-social { display: flex; gap: 6px; margin-bottom: 10px; }
+.home-social .btn { flex: 1 1 0; min-width: 0; }
+
+/* ───────── §3〜§5 舞台（三層の情景） ───────── */
+.home-stage {
+  position: relative; width: 100%; height: var(--stage-h);
+  margin-bottom: 10px;
+  border-radius: 16px; overflow: hidden;
+  isolation: isolate; contain: paint;
+  border: 1px solid var(--kin-2);
+  background: linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 56%, var(--ground) 100%);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .3), inset 0 0 70px rgba(0, 0, 0, .38);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+
+  /* 季節に依らない小物の色 */
+  --stone-1: #4a463f;
+  --stone-2: #5a554c;
+  --goban: #3a2c1c;
+  --goban-line: #c9b184;
+  --dais: #241c16;
+  --lantern: #f0dba8;
+  --flame: #ffbf5e;
+  --branch: #3a2a1e;
+  --rain: #9fb8c4;
+}
+.stage-layer { position: absolute; inset: 0; pointer-events: none; }
+.stage-layer > svg { width: 100%; height: 100%; display: block; }
+.stage-far { z-index: 1; }
+.stage-mid { z-index: 2; }
+.stage-char { z-index: 4; }
+.stage-weather { z-index: 5; }
+.stage-near { z-index: 6; }
+.stage-react { z-index: 7; }
+.stage-plate, .stage-nav { z-index: 8; }
+
+/* §15 季節パレット（ここだけが季節の色の出どころ）。
+   地は黒／濃紺／深緑／焦茶に固定し、上に載る金・白の文字の対比を必ず確保する（§8）。 */
+.home-stage[data-season="spring"] {
+  --sky-1: #2b1f2a; --sky-2: #46293a; --ground: #1e1520;
+  --far-1: #0f0b12; --far-2: #1e1622; --far-3: #33242f;
+  --orb: #f7ecd2; --torii: #8f3128; --bloom: #f2b9cb; --leaf: #6f9a5e;
+}
+.home-stage[data-season="rainy"] {
+  --sky-1: #14202a; --sky-2: #1d3038; --ground: #121c1e;
+  --far-1: #0b1216; --far-2: #152026; --far-3: #22333a;
+  --orb: #cfe0e4; --torii: #7d3a2f; --bloom: #b8d6c2; --leaf: #4f7f5c;
+}
+.home-stage[data-season="summer"] {
+  --sky-1: #0f1b2e; --sky-2: #223a4a; --ground: #101c22;
+  --far-1: #08101a; --far-2: #12202e; --far-3: #1d3242;
+  --orb: #f4efc9; --torii: #a8382b; --bloom: #ffd98a; --leaf: #2f6b47;
+}
+.home-stage[data-season="autumn"] {
+  --sky-1: #211a18; --sky-2: #4a2b1c; --ground: #1d1411;
+  --far-1: #0f0a09; --far-2: #1f1613; --far-3: #362520;
+  --orb: #f6d9a0; --torii: #9c3a26; --bloom: #cf5f2e; --leaf: #8a6a2c;
+}
+.home-stage[data-season="winter"] {
+  --sky-1: #0d1520; --sky-2: #1b2b3c; --ground: #131c26;
+  --far-1: #080d14; --far-2: #121b26; --far-3: #22303f;
+  --orb: #e8f2fb; --torii: #8a3a30; --bloom: #eaf4ff; --leaf: #5b7284;
+}
+.home-stage[data-season="all"] {
+  --sky-1: #100c14; --sky-2: #2c2038; --ground: #16101c;
+  --far-1: #090610; --far-2: #170f1e; --far-3: #27192f;
+  --orb: #ffe9a3; --torii: #b0402c; --bloom: #f0c46a; --leaf: #5f8f6b;
+}
+
+/* 能力ごとの後光色（キャラの技IDから決まる。台座の発光と波紋も同じ色を使う） */
+.home-stage[data-aura="ember"] { --aura-hi: #ff9a4d; }
+.home-stage[data-aura="bolt"]  { --aura-hi: #cbb7ff; }
+.home-stage[data-aura="wind"]  { --aura-hi: #bfe6f2; }
+.home-stage[data-aura="snow"]  { --aura-hi: #eaf6ff; }
+.home-stage[data-aura="petal"] { --aura-hi: #f6c8d6; }
+.home-stage[data-aura="light"] { --aura-hi: #ffe9a3; }
+
+/* 足元を暗く沈めて、上に載る木札の文字を必ず読ませる（§8） */
+.home-stage::after {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 34%;
+  z-index: 6; pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .34));
+}
+
+/* ───────── キャラクター（ボタンには絶対に重ならない） ───────── */
+.stage-char {
+  position: absolute; left: 50%; bottom: var(--stage-floor);
+  width: clamp(122px, 42%, 188px);
+  transform: translate(-50%, 0);
+  transform-origin: 50% 100%;
+  pointer-events: none; will-change: transform;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45));
+}
+.stage-char .hero-art { width: 100%; height: auto; display: block; }
+
+/* §12 待機モーション：要素ごとに別周期。transform / opacity しか動かさない。 */
+.hero-breath { transform-origin: 50% 100%; animation: hero-breath 4.4s ease-in-out infinite; }
+@keyframes hero-breath {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-1.5px) scaleY(1.012); }
+}
+.hero-art .hero-sleeve-l,
+.hero-art .hero-sleeve-r,
+.hero-art .hero-hair,
+.hero-art .hero-hem,
+.hero-art .aura-a,
+.hero-art .aura-b,
+.hero-art .aura-c { transform-box: fill-box; }
+.hero-art .hero-sleeve-l { transform-origin: 88% 6%; animation: sway-l 5.6s ease-in-out infinite; }
+.hero-art .hero-sleeve-r { transform-origin: 12% 6%; animation: sway-r 6.4s ease-in-out infinite; }
+.hero-art .hero-hair { transform-origin: 50% 16%; animation: sway-hair 3.9s ease-in-out infinite; }
+.hero-art .hero-hem  { transform-origin: 50% 0%;  animation: sway-hem 7.1s ease-in-out infinite; }
+@keyframes sway-l { 0%, 100% { transform: rotate(-1.4deg); } 50% { transform: rotate(1.8deg); } }
+@keyframes sway-r { 0%, 100% { transform: rotate(1.4deg); } 50% { transform: rotate(-1.8deg); } }
+@keyframes sway-hair { 0%, 100% { transform: rotate(-1.1deg); } 50% { transform: rotate(1.1deg); } }
+@keyframes sway-hem { 0%, 100% { transform: skewX(-1deg); } 50% { transform: skewX(1.2deg); } }
+
+/* 能力の後光（炎・雷・風・雪・桜・光） */
+.hero-art .aura { opacity: .72; }
+.hero-art .aura-a, .hero-art .aura-b, .hero-art .aura-c { transform-origin: 50% 50%; }
+.hero-art .aura-a { animation: aura-a 4.6s ease-in-out infinite; }
+.hero-art .aura-b { animation: aura-b 5.8s ease-in-out .7s infinite; }
+.hero-art .aura-c { animation: aura-a 7.2s ease-in-out 1.4s infinite; }
+@keyframes aura-a {
+  0%, 100% { opacity: .32; transform: translateY(0) scale(1); }
+  50% { opacity: .85; transform: translateY(-4px) scale(1.06); }
+}
+@keyframes aura-b {
+  0%, 100% { opacity: .28; transform: translateY(0) scale(1.04); }
+  50% { opacity: .8; transform: translateY(3px) scale(.96); }
+}
+
+/* 情景の小物 */
+.stage-mid .stage-glow { transform-box: fill-box; transform-origin: 50% 50%; animation: dais-glow 3.6s ease-in-out infinite; }
+@keyframes dais-glow { 0%, 100% { opacity: .18; transform: scale(1); } 50% { opacity: .44; transform: scale(1.05); } }
+.stage-far .far-orb { animation: orb-breathe 9s ease-in-out infinite; }
+@keyframes orb-breathe { 0%, 100% { opacity: .72; } 50% { opacity: .96; } }
+.stage-near .near-flame { transform-box: fill-box; transform-origin: 50% 100%; animation: flame 1.9s ease-in-out infinite; }
+@keyframes flame {
+  0%, 100% { transform: scale(1, 1); opacity: .85; }
+  45% { transform: scale(.88, 1.12); opacity: 1; }
+  72% { transform: scale(1.06, .94); opacity: .78; }
+}
+.stage-near .near-branch { transform-box: fill-box; transform-origin: 0% 0%; animation: branch-sway 8.4s ease-in-out infinite; }
+.stage-near .near-branch-r { animation-duration: 9.6s; animation-delay: -2s; }
+@keyframes branch-sway { 0%, 100% { transform: rotate(-.6deg); } 50% { transform: rotate(.9deg); } }
+
+/* §15 季節の粒（数は JS が effectLevel() で決める） */
+.stage-weather { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.stage-weather i {
+  position: absolute; top: 0; display: block;
+  width: var(--p-size, 4px); height: var(--p-size, 4px);
+  border-radius: 50%; background: var(--p-color, var(--gofun)); opacity: .72;
+  animation: home-drift var(--p-dur, 9s) linear var(--p-delay, 0s) infinite;
+}
+.stage-weather[data-kind="petal"] { --p-color: var(--bloom); }
+.stage-weather[data-kind="petal"] i { border-radius: 46% 54% 38% 62%; }
+.stage-weather[data-kind="maple"] { --p-color: var(--bloom); }
+.stage-weather[data-kind="maple"] i { border-radius: 18% 72% 22% 72%; }
+.stage-weather[data-kind="snow"] { --p-color: var(--gofun); }
+.stage-weather[data-kind="light"] { --p-color: var(--kinpaku); }
+.stage-weather[data-kind="rain"] { --p-color: var(--rain); }
+.stage-weather[data-kind="rain"] i { width: 1.6px !important; height: 13px !important; border-radius: 1px; opacity: .5; }
+.stage-weather[data-kind="firefly"] { --p-color: var(--kinpaku); }
+.stage-weather[data-kind="firefly"] i {
+  animation-name: home-float; animation-timing-function: ease-in-out;
+  box-shadow: 0 0 7px var(--kinpaku);
+}
+@keyframes home-drift {
+  from { transform: translate3d(0, -40px, 0) rotate(0deg); }
+  to { transform: translate3d(var(--p-drift, 0px), calc(var(--stage-h) + 40px), 0) rotate(240deg); }
+}
+@keyframes home-float {
+  0%, 100% { transform: translate3d(0, calc(var(--stage-h) * .74), 0); opacity: .1; }
+  50% { transform: translate3d(var(--p-drift, 0px), calc(var(--stage-h) * .42), 0); opacity: .95; }
+}
+
+/* §13 タップ反応（波紋は使い回しの6個だけ。WAAPI が transform / opacity を上書きする） */
+.stage-react { position: absolute; inset: 0; pointer-events: none; }
+.stage-react i {
+  position: absolute; left: 0; top: 0; width: 86px; height: 86px;
+  border-radius: 50%; opacity: 0;
+  border: 2px solid var(--kinpaku);
+  box-shadow: inset 0 0 18px var(--aura-hi);
+  transform: translate(-50%, -50%) scale(.2);
+}
+
+/* 名札（漆地＋金文字。どの季節の上でも読める） */
+.stage-plate {
+  position: absolute; left: 10px; top: 10px; max-width: 62%;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 6px 11px; border-radius: 6px;
+  background: linear-gradient(180deg, rgba(18, 14, 12, .93), rgba(18, 14, 12, .8));
+  border: 1px solid var(--kin-2); color: var(--gofun);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+}
+.stage-plate b { font-family: var(--font); font-size: 15px; letter-spacing: .1em; color: var(--kinpaku); }
+.stage-plate span { font-size: 10.5px; letter-spacing: .04em; color: rgba(247, 242, 230, .84); }
+
+/* キャラ送り（44×44。キャラの左右に逃がすので立ち絵と重ならない） */
+.stage-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--kin-2); background: rgba(18, 14, 12, .55);
+  color: var(--kinpaku); font-size: 22px; line-height: 1; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.stage-nav.prev { left: 6px; }
+.stage-nav.next { right: 6px; }
+.stage-nav:active { background: rgba(18, 14, 12, .82); }
+
+/* ───────── §6 木札ボタン ───────── */
+.home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 9px; }
+.home-actions-sub { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 12px; }
+
+.mokufuda {
+  --mon-ink: #f7f2e6; --mon-1: var(--kinpaku); --mon-2: var(--kinpaku); --mon-3: var(--kinpaku);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 92px; padding: 14px 8px 10px;
+  border: 1px solid var(--kin-2); border-radius: 10px 10px 13px 13px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(0, 0, 0, .20)),
+    repeating-linear-gradient(93deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, var(--kiji-1), var(--kiji-2));
+  color: var(--gofun); cursor: pointer; text-align: center;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, .3), 0 6px 16px rgba(0, 0, 0, .26), inset 0 1px 0 rgba(255, 255, 255, .14);
+  transition: transform .08s ease, box-shadow .08s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.mokufuda::before { /* 紐穴 */
+  content: ""; position: absolute; left: 50%; top: 5px; width: 7px; height: 7px;
+  margin-left: -3.5px; border-radius: 50%;
+  background: rgba(0, 0, 0, .55); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .8);
+}
+.mokufuda:active { transform: translateY(3px); box-shadow: 0 0 0 rgba(0, 0, 0, .3), 0 3px 8px rgba(0, 0, 0, .26); }
+.mokufuda .fuda-mon {
+  position: absolute; right: -10px; bottom: -12px; width: 76px; height: 76px;
+  opacity: .16; pointer-events: none;
+}
+.mokufuda .fuda-mon svg { width: 100%; height: 100%; display: block; }
+.mokufuda .fuda-main {
+  font-family: var(--font); font-size: 23px; letter-spacing: .18em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .65); position: relative;
+}
+.mokufuda .fuda-sub { font-size: 11px; letter-spacing: .04em; color: rgba(247, 242, 230, .8); position: relative; }
+.mokufuda.main { --kiji-1: #7a2a22; --kiji-2: #4e1a15; --mon-1: #6fbf95; --mon-2: #e0866f; --mon-3: #7fa8d8; }
+.mokufuda.story { --kiji-1: #25406b; --kiji-2: #152943; }
+.mokufuda.small { min-height: 56px; padding: 12px 6px 8px; border-radius: 8px; }
+.mokufuda.small .fuda-main { font-size: 15px; letter-spacing: .1em; }
+.mokufuda.small .fuda-sub { font-size: 10px; }
+.mokufuda.small .fuda-mon { width: 52px; height: 52px; right: -8px; bottom: -10px; }
+
+/* ───────── 量の調整・小さい画面・動きを減らす設定 ───────── */
+.home-stage[data-fx="low"] .hero-art .aura { opacity: .5; }
+.home-stage[data-fx="off"] .stage-weather { display: none; }
+.home-stage[data-fx="off"] .hero-art .aura { opacity: .45; }
+.home-stage[data-fx="off"] * { animation: none !important; }
+
+@media (max-width: 360px) {
+  :root { --stage-h: clamp(228px, 42svh, 320px); }
+  .home-avatar { width: 42px; height: 42px; }
+  .home-name { font-size: 15px; }
+  .home-coin { padding: 5px 9px; font-size: 12px; }
+  .stage-plate { max-width: 58%; padding: 5px 9px; }
+  .stage-plate b { font-size: 14px; }
+  .mokufuda { min-height: 84px; }
+  .mokufuda .fuda-main { font-size: 20px; letter-spacing: .12em; }
+  .home-actions-sub { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+}
+@media (min-width: 900px) {
+  :root { --stage-h: clamp(300px, 50svh, 440px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-stage * { animation: none !important; }
+  .stage-weather { opacity: .32; }
+}
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -9443,6 +9779,296 @@ const supaNet = new SupaNet();
 
 return { SupaNet, supaNet };
 });
+__def("views/home-stage.js", function (__req) {
+/**
+ * ホームの舞台（§3〜§6・§12〜§15）。
+ * 画像・Canvas・外部フォントを使わず、遠景／中景／近景の三層 SVG と
+ * 粒の DOM 層だけで情景を作る。色はすべて CSS 変数で受け取る。
+ */
+
+const { el, effectLevel, prefersReducedMotion } = __req("util.js");
+const { characterHero, auraKindOf, petal, maple } = __req("art.js");
+const { audio } = __req("audio.js");
+const { CHAPTER_BY_ID, STAGE_BY_ID, STORY_STAGE_COUNT } = __req("../../shared/story/stages.js");
+
+const SEASONS = ['spring', 'rainy', 'summer', 'autumn', 'winter', 'all'];
+const SEASON_LABEL = { spring: '春', rainy: '梅雨', summer: '夏', autumn: '秋', winter: '冬', all: '四季' };
+const SEASON_WORD = { spring: '花の候', rainy: '雨の候', summer: '炎暑の候', autumn: '紅葉の候', winter: '霜の候', all: 'めぐる候' };
+const PARTICLE_BY_SEASON = { spring: 'petal', rainy: 'rain', summer: 'firefly', autumn: 'maple', winter: 'snow', all: 'light' };
+const PARTICLE_COUNT = { petal: 14, rain: 18, firefly: 10, maple: 14, snow: 16, light: 10 };
+
+/* ───────── §15 季節の決めかた ─────────
+ * 物語の進行（次に挑む段が属する章）が季節を決める。
+ * 物語がまだ読めない／使えない場合だけ、実際の暦にする（§53 の読込中もここに落ちる）。 */
+function seasonOfStory(ctx) {
+  try {
+    const p = ctx.storyProfile ? ctx.storyProfile() : null;
+    const next = Math.min(STORY_STAGE_COUNT, (p?.story?.maxStage || 0) + 1);
+    const stage = STAGE_BY_ID[next];
+    const chap = stage ? CHAPTER_BY_ID[stage.chapter] : null;
+    if (chap && SEASONS.includes(chap.season)) return chap.season;
+  } catch { /* 読めないときは暦へ */ }
+  const m = new Date().getMonth() + 1;
+  if (m >= 3 && m <= 5) return 'spring';
+  if (m === 6 || m === 7) return 'rainy';
+  if (m === 8 || m === 9) return 'summer';
+  if (m === 10 || m === 11) return 'autumn';
+  return 'winter';
+}
+
+/* ───────── 遠景：山・鳥居・社・日月 ───────── */
+function torii(cx, base, h) {
+  const w = h * 1.1;
+  return '<g fill="var(--torii)">'
+    + `<rect x="${cx - w / 2 - 8}" y="${base - h}" width="${w + 16}" height="7" rx="3"/>`
+    + `<rect x="${cx - w / 2 - 3}" y="${base - h + 9}" width="${w + 6}" height="5"/>`
+    + `<rect x="${cx - w / 2 + 2}" y="${base - h + 24}" width="${w - 4}" height="5"/>`
+    + `<rect x="${cx - w / 2 + 4}" y="${base - h + 4}" width="7" height="${h - 4}"/>`
+    + `<rect x="${cx + w / 2 - 11}" y="${base - h + 4}" width="7" height="${h - 4}"/>`
+    + `<rect x="${cx - 3}" y="${base - h + 6}" width="6" height="18"/></g>`;
+}
+
+function farLayer() {
+  return '<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    + '<circle cx="298" cy="66" r="52" fill="var(--orb)" opacity=".12"/>'
+    + '<circle class="far-orb" cx="298" cy="66" r="34" fill="var(--orb)" opacity=".8"/>'
+    + '<g fill="var(--far-3)" opacity=".45"><ellipse cx="110" cy="128" rx="120" ry="11"/><ellipse cx="300" cy="152" rx="140" ry="9"/></g>'
+    + '<path d="M0 176 L62 118 L104 150 L150 104 L214 176 Z" fill="var(--far-3)"/>'
+    + '<path d="M150 196 L232 126 L282 166 L330 132 L400 196 Z" fill="var(--far-3)"/>'
+    + '<path d="M0 208 L70 158 L138 208 Z" fill="var(--far-2)"/>'
+    + '<path d="M252 210 L330 150 L400 210 Z" fill="var(--far-2)"/>'
+    + torii(200, 216, 56)
+    + '<path d="M92 218 L128 192 L164 218 Z" fill="var(--far-1)"/><rect x="104" y="216" width="48" height="16" fill="var(--far-1)"/>'
+    + '<rect x="0" y="232" width="400" height="68" fill="var(--far-1)"/>'
+    + '</svg>';
+}
+
+/* ───────── 中景：石段・碁盤・発光する台座 ───────── */
+function midLayer() {
+  const gobanLines = [0, 1, 2, 3, 4].map((i) => `<path d="M${-46 + i * 23} 2 L${-60 + i * 30} 32"/>`).join('')
+    + [0, 1, 2].map((i) => `<path d="M${-48 - i * 5} ${7 + i * 11} L${48 + i * 5} ${7 + i * 11}"/>`).join('');
+  return '<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    + '<g fill="var(--stone-1)"><rect x="40" y="252" width="320" height="14" rx="3"/>'
+    + '<rect x="60" y="268" width="280" height="14" rx="3"/><rect x="80" y="284" width="240" height="16" rx="3"/></g>'
+    // 飾りの碁盤。状態は一切表さない（§69）ので薄く置く。
+    + '<g opacity=".32" transform="translate(302 226)">'
+      + '<path d="M-46 0 L46 0 L60 34 L-60 34 Z" fill="var(--goban)"/>'
+      + `<g stroke="var(--goban-line)" stroke-width="1" fill="none" opacity=".7">${gobanLines}</g>`
+      + '<circle cx="-16" cy="14" r="5" fill="var(--p1)"/><circle cx="6" cy="22" r="5" fill="var(--p2)"/>'
+      + '<circle cx="24" cy="12" r="5" fill="var(--p3)"/>'
+    + '</g>'
+    // 台座（能力の色で呼吸する）
+    + '<ellipse class="stage-glow" cx="200" cy="262" rx="96" ry="26" fill="var(--aura-hi)" opacity=".28"/>'
+    + '<ellipse cx="200" cy="264" rx="74" ry="19" fill="var(--dais)" stroke="var(--kinpaku)" stroke-width="2"/>'
+    + '<ellipse cx="200" cy="262" rx="60" ry="14" fill="none" stroke="var(--kinpaku)" stroke-width="1" opacity=".55"/>'
+    + '</svg>';
+}
+
+/* ───────── 近景：季節の枝・石灯籠 ───────── */
+function foliage(season) {
+  const pts = [[26, 18], [56, 26], [62, 58], [88, 18], [112, 26], [132, 42], [16, 10], [136, 16]];
+  switch (season) {
+    case 'autumn':
+      return pts.map(([x, y], i) => maple(x, y, 9 + (i % 3) * 2, i % 2 ? 'var(--bloom)' : 'var(--leaf)')).join('');
+    case 'winter':
+      return pts.slice(0, 5).map(([x, y]) => `<ellipse cx="${x}" cy="${y - 4}" rx="10" ry="4" fill="var(--bloom)" opacity=".9"/>`).join('');
+    case 'spring': case 'all':
+      return pts.map(([x, y], i) => petal(x, y, 8 + (i % 3) * 2, i % 3 ? 'var(--bloom)' : 'var(--leaf)')).join('');
+    default:
+      return pts.map(([x, y], i) => `<ellipse cx="${x}" cy="${y}" rx="${11 + (i % 3) * 2}" ry="6" fill="var(--leaf)" transform="rotate(${-24 + i * 13} ${x} ${y})"/>`).join('');
+  }
+}
+
+function branch(season) {
+  return '<g stroke="var(--branch)" stroke-width="7" fill="none" stroke-linecap="round">'
+    + '<path d="M-10 6 q 70 22 132 6"/><path d="M52 16 q 16 26 10 46"/><path d="M104 16 q 10 22 30 30"/></g>'
+    + `<g>${foliage(season)}</g>`;
+}
+
+function lantern(cx, base) {
+  const top = base - 104;
+  return `<g transform="translate(${cx} 0)">`
+    + `<rect x="-17" y="${base - 30}" width="34" height="12" rx="3" fill="var(--stone-2)"/>`
+    + `<rect x="-9" y="${base - 56}" width="18" height="28" fill="var(--stone-2)"/>`
+    + `<rect x="-23" y="${top + 34}" width="46" height="10" rx="3" fill="var(--stone-2)"/>`
+    + `<path d="M-19 ${top + 34} L-15 ${top + 8} L15 ${top + 8} L19 ${top + 34} Z" fill="var(--lantern)"/>`
+    + `<path class="near-flame" d="M0 ${top + 30} q -9 -8 -9 -14 q 0 -8 9 -12 q 9 4 9 12 q 0 6 -9 14z" fill="var(--flame)"/>`
+    + `<path d="M-26 ${top + 8} L0 ${top - 12} L26 ${top + 8} Z" fill="var(--stone-2)"/>`
+    + `<circle cx="0" cy="${top - 18}" r="5" fill="var(--stone-2)"/></g>`;
+}
+
+/** 枝は上端、灯籠は左右の下端だけ。キャラの顔（中央）には絶対にかぶせない。 */
+function nearLayer(season) {
+  return '<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+    + `<g class="near-branch near-branch-l">${branch(season)}</g>`
+    // 鏡像は外側の g に置く。内側にクラスを付けないと CSS transform が属性を潰す。
+    + `<g transform="translate(400 0) scale(-1 1)"><g class="near-branch near-branch-r">${branch(season)}</g></g>`
+    + lantern(34, 300) + lantern(366, 300)
+    + '</svg>';
+}
+
+/* ───────── §15 季節の粒（数は設定で落とす） ───────── */
+function weatherLayer(kind, level) {
+  if (level === 'off') return null;
+  const base = PARTICLE_COUNT[kind] || 0;
+  const n = level === 'low' ? Math.ceil(base / 3) : base;
+  if (!n) return null;
+  const wrap = el('div', { class: 'stage-weather', dataset: { kind }, 'aria-hidden': 'true' });
+  for (let i = 0; i < n; i += 1) {
+    // ばらつきは添字から作る（毎回まったく同じ絵になり、乱数で揺れない）
+    wrap.appendChild(el('i', {
+      style: `left:${(i * 37) % 100}%;`
+        + `--p-size:${3 + ((i * 5) % 4)}px;`
+        + `--p-dur:${8 + ((i * 3) % 7)}s;`
+        + `--p-delay:${-(((i * 11) % 70) / 10)}s;`
+        + `--p-drift:${((i % 5) - 2) * 16}px`,
+    }));
+  }
+  return wrap;
+}
+
+/* ───────── §13 タップ反応 ─────────
+ * ・波紋は最初に 6 個だけ作って使い回す（DOM は増えない）
+ * ・90ms のスロットルで、連打しても毎秒 11 回が上限
+ * ・再生は WAAPI。transform / opacity だけなので合成のみで済み、
+ *   クラス付け外し＋強制リフローが要らない
+ * ・ctx.refresh() は絶対に呼ばない（呼ぶと画面全体が作り直される）
+ */
+const RIPPLE_KF = [
+  { transform: 'translate(-50%,-50%) scale(.2)', opacity: .85 },
+  { transform: 'translate(-50%,-50%) scale(1)', opacity: 0 },
+];
+const RIPPLE_OPT = { duration: 520, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' };
+const POKE_KF = [
+  { transform: 'translate(-50%,0) scale(1,1)' },
+  { transform: 'translate(-50%,0) scale(1.04,.96)', offset: .28 },
+  { transform: 'translate(-50%,0) scale(.99,1.02)', offset: .62 },
+  { transform: 'translate(-50%,0) scale(1,1)' },
+];
+const POKE_OPT = { duration: 420, easing: 'ease-out' };
+
+function bindStageTap(stage, charWrap, still) {
+  const react = el('div', { class: 'stage-react', 'aria-hidden': 'true' });
+  const pool = [];
+  for (let i = 0; i < 6; i += 1) { const n = el('i'); react.appendChild(n); pool.push(n); }
+  const canAnimate = !still && typeof stage.animate === 'function';
+  let next = 0;
+  let lastTap = -1e9;
+  let lastSfx = -1e9;
+
+  stage.addEventListener('pointerdown', (ev) => {
+    if (ev.target.closest('.stage-nav')) return;   // 送りボタンは別扱い
+    if (document.hidden) return;
+    const now = ev.timeStamp || Date.now();
+    if (now - lastTap < 90) return;
+    lastTap = now;
+    if (now - lastSfx > 220) { lastSfx = now; audio.playSfx('select'); }
+    if (!canAnimate) return;
+    // 通った時だけ 1 回だけ測る（スクロールでずれないよう毎回取り直す）
+    const r = stage.getBoundingClientRect();
+    const node = pool[next];
+    next = (next + 1) % pool.length;
+    node.style.left = `${ev.clientX - r.left}px`;
+    node.style.top = `${ev.clientY - r.top}px`;
+    node.getAnimations().forEach((a) => a.cancel());
+    node.animate(RIPPLE_KF, RIPPLE_OPT);
+    // .stage-char には CSS アニメを一切置いていないので、
+    // ここで消えるのは前回のタップ分だけ（呼吸は内側の .hero-breath）
+    charWrap.getAnimations().forEach((a) => a.cancel());
+    charWrap.animate(POKE_KF, POKE_OPT);
+  }, { passive: true });
+
+  return react;
+}
+
+/* ───────── §6 木札ボタンと家紋 ───────── */
+function monSvg(kind) {
+  const ring = '<circle cx="50" cy="50" r="44" fill="none" stroke="var(--mon-ink)" stroke-width="3"/>';
+  switch (kind) {
+    case 'tomoe': // 三つ巴＝三つの席
+      return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${ring}${
+        [0, 120, 240].map((a, i) => `<path transform="rotate(${a} 50 50)" fill="var(--mon-${i + 1})" d="M50 50 q 0 -26 -18 -30 q -16 6 -10 22 q 6 14 28 8z"/>`).join('')
+      }</svg>`;
+    case 'sakura':
+      return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${ring}${
+        petal(50, 52, 26, 'var(--mon-ink)')
+      }<circle cx="50" cy="52" r="6" fill="var(--mon-1)"/></svg>`;
+    case 'scroll': // 巻物
+      return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${ring}`
+        + '<rect x="18" y="34" width="64" height="32" rx="4" fill="none" stroke="var(--mon-ink)" stroke-width="3"/>'
+        + '<circle cx="18" cy="50" r="11" fill="none" stroke="var(--mon-ink)" stroke-width="3"/>'
+        + '<circle cx="82" cy="50" r="11" fill="none" stroke="var(--mon-ink)" stroke-width="3"/></svg>';
+    default: // 丸に一（碁）
+      return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">${ring}`
+        + '<rect x="26" y="46" width="48" height="8" rx="4" fill="var(--mon-ink)"/></svg>';
+  }
+}
+
+function mokufuda({ main, sub, mon, variant = '', onclick }) {
+  return el('button', { class: `mokufuda${variant ? ` ${variant}` : ''}`, type: 'button', onclick }, [
+    el('span', { class: 'fuda-mon', 'aria-hidden': 'true', html: monSvg(mon) }),
+    el('span', { class: 'fuda-main', text: main }),
+    el('span', { class: 'fuda-sub', text: sub }),
+  ]);
+}
+
+/* ───────── 舞台の組み立てとキャッシュ ─────────
+ * app.js の render() は clear(root) で毎回作り直し、しかも
+ * POLL_IDLE = 8000ms の取得ごとに走る。作り直すたびに
+ * 待機モーションが巻き戻るので、条件が同じ間は同じノードを返す。
+ */
+let cache = { key: '', node: null };
+
+function homeStage(ctx, o) {
+  const still = prefersReducedMotion();
+  const level = still ? 'off' : effectLevel();
+  const key = [o.charId, o.eq.outfit, o.eq.accessory, o.season, level, o.charName, o.skillName].join('|');
+  if (cache.key === key && cache.node) return cache.node;
+  cache = { key, node: buildStage(ctx, o, level, still) };
+  return cache.node;
+}
+
+function resetHomeStage() { cache = { key: '', node: null }; }
+
+function buildStage(ctx, o, level, still) {
+  const stage = el('div', {
+    class: 'home-stage',
+    dataset: { season: o.season, aura: auraKindOf(o.charId), fx: level },
+  });
+  stage.appendChild(el('div', { class: 'stage-layer stage-far', html: farLayer() }));
+  stage.appendChild(el('div', { class: 'stage-layer stage-mid', html: midLayer() }));
+
+  const charWrap = el('div', { class: 'stage-char' }, [
+    el('div', { class: 'hero-breath', html: characterHero(o.charId, o.eq, { uid: o.charId, idle: !still }) }),
+  ]);
+  stage.appendChild(charWrap);
+
+  const weather = weatherLayer(PARTICLE_BY_SEASON[o.season], level);
+  if (weather) stage.appendChild(weather);
+
+  stage.appendChild(el('div', { class: 'stage-layer stage-near', html: nearLayer(o.season) }));
+  stage.appendChild(bindStageTap(stage, charWrap, still));
+
+  stage.appendChild(el('div', { class: 'stage-plate' }, [
+    el('b', { text: o.charName }),
+    el('span', { text: `${o.skillName}／${SEASON_LABEL[o.season]}　${SEASON_WORD[o.season]}` }),
+  ]));
+
+  if (o.canStep) {
+    stage.appendChild(el('button', {
+      class: 'stage-nav prev', type: 'button', 'aria-label': '前のキャラクター', text: '‹',
+      onclick: (e) => { e.stopPropagation(); o.onStep(-1); },
+    }));
+    stage.appendChild(el('button', {
+      class: 'stage-nav next', type: 'button', 'aria-label': '次のキャラクター', text: '›',
+      onclick: (e) => { e.stopPropagation(); o.onStep(1); },
+    }));
+  }
+  return stage;
+}
+
+return { homeStage, resetHomeStage, mokufuda, monSvg, seasonOfStory, SEASON_LABEL };
+});
 __def("views/home.js", function (__req) {
 /** ホーム / ミッション */
 
@@ -9451,39 +10077,84 @@ const { characterSvg } = __req("art.js");
 const { playerLevel, playerLevelProgress, missionProgress, storyTotals } = __req("../../shared/profile.js");
 const { STAGE_BY_ID, STORY_STAGE_COUNT } = __req("../../shared/story/stages.js");
 const { CHARACTER_BY_ID, DEFAULT_EQUIP } = __req("../../shared/constants.js");
+const { homeStage, mokufuda, seasonOfStory } = __req("views/home-stage.js");
+
+/** 舞台に出すキャラの控え。端末内の一時的な選択で、アカウントには書かない。 */
+let homeCharId = null;
 
 function renderHome(root, ctx) {
   const p = ctx.profile();
   const lvl = playerLevel(p.playerXp);
   const prog = playerLevelProgress(p.playerXp);
-  const charId = p.lastCharId && p.chars[p.lastCharId]?.owned ? p.lastCharId : Object.keys(p.chars).find((k) => p.chars[k].owned);
+  const owned = Object.keys(p.chars).filter((k) => p.chars[k].owned);
+  const fallback = p.lastCharId && p.chars[p.lastCharId]?.owned ? p.lastCharId : owned[0];
+  const charId = homeCharId && p.chars[homeCharId]?.owned ? homeCharId : fallback;
   const eq = p.equipByChar?.[charId] || DEFAULT_EQUIP;
+  const ch = CHARACTER_BY_ID[charId];
 
-  root.appendChild(el('div', { class: 'card' }, [
-    el('div', { class: 'row', style: 'align-items:flex-start' }, [
-      el('div', { html: characterSvg(charId, eq, { size: 104 }) }),
-      el('div', { class: 'grow' }, [
-        el('div', { style: 'font-family:var(--font);font-size:18px;letter-spacing:.06em', text: p.name || '旅人' }),
-        el('div', { class: 'muted', text: `プレイヤーLv ${lvl}（${prog.into}/${prog.need} XP）` }),
-        el('div', { class: 'bar', style: 'margin:6px 0' }, [el('i', { style: `width:${Math.round(prog.ratio * 100)}%` })]),
-        el('div', { class: 'muted', text: `所持ペリカ ${fmt(p.perica)}／使用中 ${CHARACTER_BY_ID[charId]?.name || '-'}` }),
-        el('div', { class: 'muted', text: 'アカウントの資産を表示中（どの端末から入っても同じ記録です）' }),
+  /* ── §2 身分帯 ── */
+  root.appendChild(el('div', { class: 'home-topbar' }, [
+    el('div', { class: 'home-avatar', html: characterSvg(charId, eq, { size: 46 }) }),
+    el('div', { class: 'home-id' }, [
+      el('div', { class: 'home-name', text: p.name || '旅人' }),
+      el('div', { class: 'home-lv' }, [
+        el('b', { text: `Lv ${lvl}` }),
+        el('div', { class: 'bar' }, [el('i', { style: `width:${Math.round(prog.ratio * 100)}%` })]),
+        el('span', { text: `${prog.into}/${prog.need}` }),
       ]),
     ]),
+    el('button', {
+      class: 'home-coin', type: 'button', 'aria-label': `所持ペリカ ${fmt(p.perica)}`,
+      onclick: () => ctx.setView('gacha'),
+    }, [el('span', { 'aria-hidden': 'true', text: '◎' }), el('span', { text: fmt(p.perica) })]),
   ]));
 
-  root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: 'あそぶ' }),
-    el('div', { class: 'grid2' }, [
-      el('button', { class: 'btn', type: 'button', text: '対戦する', onclick: () => ctx.setView('play') }),
-      el('button', { class: 'btn sub', type: 'button', text: '物語（1対1）', onclick: () => ctx.setView('story') }),
-      el('button', { class: 'btn sub', type: 'button', text: 'オンライン対戦', onclick: () => ctx.setView('online') }),
-      el('button', { class: 'btn sub', type: 'button', text: 'ガチャを引く', onclick: () => ctx.setView('gacha') }),
-      el('button', { class: 'btn sub', type: 'button', text: '着せ替え', onclick: () => ctx.setView('wardrobe') }),
-    ]),
+  /* 通知・フレンド（§2。世界対戦のときだけ出す） */
+  if (ctx.onlineKind === 'supabase') {
+    const unread = ctx.net.view?.unread ?? 0;
+    root.appendChild(el('div', { class: 'home-social' }, [
+      el('button', { class: 'btn sub small', type: 'button', text: 'フレンド', onclick: () => ctx.setView('friends') }),
+      el('button', {
+        class: 'btn sub small', type: 'button',
+        text: unread ? `通知（${unread}）` : '通知',
+        onclick: () => ctx.setView('notifications'),
+      }),
+      el('button', { class: 'btn sub small', type: 'button', text: '順位', onclick: () => ctx.setView('ranking') }),
+    ]));
+  }
+
+  /* ── §3〜§5・§12〜§15 舞台 ── */
+  if (ch) {
+    root.appendChild(homeStage(ctx, {
+      charId,
+      eq,
+      charName: ch.name,
+      skillName: ch.skill.name,
+      season: seasonOfStory(ctx),
+      canStep: owned.length > 1,
+      onStep: (d) => {
+        const i = owned.indexOf(charId);
+        homeCharId = owned[(i + d + owned.length) % owned.length];
+        ctx.refresh();
+      },
+    }));
+  }
+
+  /* ── §6 大型の木札 ── */
+  root.appendChild(el('div', { class: 'home-actions' }, [
+    mokufuda({ main: '対戦', sub: '三人で一局', mon: 'tomoe', variant: 'main', onclick: () => ctx.setView('play') }),
+    mokufuda({ main: '物語', sub: '六つの碁印', mon: 'scroll', variant: 'story', onclick: () => ctx.setView('story') }),
+  ]));
+  root.appendChild(el('div', { class: 'home-actions-sub' }, [
+    mokufuda({ main: '世界', sub: 'オンライン', mon: 'goishi', variant: 'small', onclick: () => ctx.setView('online') }),
+    mokufuda({ main: '籤', sub: 'ガチャ', mon: 'sakura', variant: 'small', onclick: () => ctx.setView('gacha') }),
+    mokufuda({ main: '衣', sub: '着せ替え', mon: 'goishi', variant: 'small', onclick: () => ctx.setView('wardrobe') }),
   ]));
 
+  /* ── ここから下は既存のカードをそのまま残す（説明は下へ送る） ── */
   if (ctx.onlineKind === 'supabase') root.appendChild(friendsCard(ctx));
+  root.appendChild(storyCard(ctx));
+  root.appendChild(missionCard(ctx, 3));
 
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: 'ゲームを共有' }),
@@ -9494,9 +10165,6 @@ function renderHome(root, ctx) {
     ]),
     ctx.inAppBrowser ? el('div', { class: 'notice', text: 'アプリ内ブラウザで開いています。共有や音が使えない場合は、右上などのメニューから Safari / Chrome で開き直してください。上の「URLを表示」からURLをコピーできます。' }) : null,
   ]));
-
-  root.appendChild(storyCard(ctx));
-  root.appendChild(missionCard(ctx, 3));
 
   root.appendChild(el('div', { class: 'card' }, [
     el('h2', { class: 'section-title', text: 'あそびかた' }),
@@ -9855,6 +10523,124 @@ function characterSvg(charId, eq = {}, opts = {}) {
     + '</svg>';
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   ① art.js に追加（既存 characterSvg は 1 文字も変えない）
+      挿入位置：art.js の `function cosmeticThumb(id) {` の直前
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ───────── ホーム用の大きな立ち絵（§3・§12） ─────────
+ * 内部座標は 120×150 のまま。よって outfitPattern / accessoryMarkup を
+ * そのまま流用でき、着せ替えの反映が自動的に一致する。
+ * それを 2 倍に敷き直した 240×330 の枠へ置き、袖・裾・髪・草履・後光を足す。
+ * 装飾の色は CSS 変数で受け取り、リテラル色を JS に増やさない。
+ */
+const HERO_SKIN = '#f2d7c2';
+
+/** 技ID → 背後の演出（炎・雷・風・雪・桜・光） */
+const AURA_BY_SKILL = {
+  spark: 'ember', pull: 'bolt', windwalk: 'wind',
+  freeze: 'snow', ward: 'petal', transmute: 'light',
+};
+
+function auraKindOf(charId) {
+  const ch = CHARACTER_BY_ID[charId];
+  return (ch && AURA_BY_SKILL[ch.skill.id]) || 'light';
+}
+
+/**
+ * 能力の後光。
+ * 動かす要素（.aura-a/b/c）には transform 属性を付けない。
+ * 付けると CSS の transform に上書きされて原点へ飛ぶため、
+ * 位置決めは必ず外側の <g transform> で行う。
+ */
+function heroAura(kind) {
+  switch (kind) {
+    case 'ember':
+      return '<g class="aura" fill="none" stroke="var(--aura-hi)" stroke-width="3" stroke-linecap="round">'
+        + '<path class="aura-a" d="M26 118 q -10 -22 4 -40 q -6 24 10 34"/>'
+        + '<path class="aura-b" d="M94 122 q 12 -24 -2 -44 q 8 26 -8 38"/>'
+        + '<path class="aura-c" d="M60 8 q -11 -14 0 -26 q 11 12 0 26"/></g>';
+    case 'bolt':
+      return '<g class="aura" fill="var(--aura-hi)">'
+        + ['24 78 2.2 a', '96 62 1.8 b', '60 6 1.4 c'].map((s) => {
+          const [x, y, k, c] = s.split(' ');
+          return `<g transform="translate(${x} ${y}) scale(${k})"><path class="aura-${c}" d="M1,-7 L-4,1 L-0.5,1 L-2,7 L4,-1 L0.5,-1 Z"/></g>`;
+        }).join('') + '</g>';
+    case 'wind':
+      return '<g class="aura" fill="none" stroke="var(--aura-hi)" stroke-width="2.4" stroke-linecap="round">'
+        + '<path class="aura-a" d="M8 72 q 26 -12 44 -2 q 14 8 28 -2"/>'
+        + '<path class="aura-b" d="M12 94 q 24 -10 40 0 q 16 8 32 -4"/>'
+        + '<path class="aura-c" d="M16 50 q 22 -10 36 -2"/></g>';
+    case 'snow':
+      return '<g class="aura" stroke="var(--aura-hi)" stroke-width="2" stroke-linecap="round">'
+        + [[20, 70, 9, 'a'], [100, 88, 7, 'b'], [60, 6, 6, 'c']].map(([x, y, r, c]) =>
+          `<g transform="translate(${x} ${y})"><g class="aura-${c}">${
+            [0, 60, 120].map((deg) => `<line x1="${-r}" y1="0" x2="${r}" y2="0" transform="rotate(${deg})"/>`).join('')
+          }</g></g>`).join('') + '</g>';
+    case 'petal':
+      return '<g class="aura">'
+        + `<g class="aura-a">${petal(20, 74, 7, 'var(--aura-hi)')}</g>`
+        + `<g class="aura-b">${petal(100, 88, 6, 'var(--aura-hi)')}</g>`
+        + `<g class="aura-c">${petal(60, 6, 5, 'var(--aura-hi)')}</g></g>`;
+    default: // light
+      return '<g class="aura" fill="none" stroke="var(--aura-hi)">'
+        + '<circle class="aura-a" cx="60" cy="72" r="46" stroke-width="2"/>'
+        + '<circle class="aura-b" cx="60" cy="72" r="34" stroke-width="1.4"/>'
+        + '<circle class="aura-c" cx="60" cy="72" r="56" stroke-width="1"/></g>';
+  }
+}
+
+/**
+ * ホーム用の立ち絵。
+ * @param {string} charId
+ * @param {{outfit:string, accessory:string}} eq
+ * @param {{uid?:string, idle?:boolean, aura?:boolean}} opts
+ */
+function characterHero(charId, eq = {}, opts = {}) {
+  const ch = CHARACTER_BY_ID[charId];
+  if (!ch) return '';
+  const o = styleOf(eq.outfit, DEFAULT_EQUIP.outfit);
+  const hair = ch.color;
+  const uid = String(opts.uid || charId).replace(/[^A-Za-z0-9_-]/g, '');
+  const idle = opts.idle !== false;
+  const k = (name) => (idle ? ` class="${name}"` : '');
+  const aura = opts.aura === false ? '' : heroAura(auraKindOf(charId));
+  return `<svg class="hero-art" viewBox="0 0 240 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(ch.name)}">`
+    + `<defs><radialGradient id="heroGlow-${uid}" cx="50%" cy="50%" r="50%">`
+    + '<stop offset="0" stop-color="var(--aura-hi)" stop-opacity=".46"/>'
+    + '<stop offset=".62" stop-color="var(--aura-hi)" stop-opacity=".14"/>'
+    + '<stop offset="1" stop-color="var(--aura-hi)" stop-opacity="0"/></radialGradient></defs>'
+    + '<g transform="translate(0 22) scale(2)">'
+      + `<circle cx="60" cy="74" r="58" fill="url(#heroGlow-${uid})"/>`
+      + aura
+      + '<ellipse cx="60" cy="146" rx="33" ry="5.5" fill="var(--hero-shadow)"/>'
+      // 袖（左右で周期をずらして揺らす）
+      + `<path${k('hero-sleeve-l')} d="M30 76 L14 108 L26 114 L36 86 Z" fill="${o.base}" stroke="rgba(0,0,0,.22)"/>`
+      + `<path${k('hero-sleeve-r')} d="M90 76 L106 108 L94 114 L84 86 Z" fill="${o.base}" stroke="rgba(0,0,0,.22)"/>`
+      // 身頃（既存より裾を長く）
+      + `<path d="M60 56 L94 76 L88 140 L32 140 L26 76 Z" fill="${o.base}" stroke="rgba(0,0,0,.2)"/>`
+      + outfitPattern(o.pattern, o.base, o.trim)
+      + `<path d="M60 58 L43 140 M60 58 L77 140" stroke="${o.trim}" stroke-width="3" fill="none" opacity=".9"/>`
+      + `<rect x="32" y="104" width="56" height="9" fill="${o.trim}" opacity=".95"/>`
+      + `<path d="M40 113 l9 15 -6 4 -7 -15 z" fill="${o.trim}" opacity=".8"/>`
+      // 裾（風で揺れる）
+      + `<path${k('hero-hem')} d="M32 128 L88 128 L92 144 L28 144 Z" fill="${o.base}" stroke="rgba(0,0,0,.18)"/>`
+      + `<rect x="44" y="142" width="14" height="4" rx="2" fill="${o.trim}"/>`
+      + `<rect x="62" y="142" width="14" height="4" rx="2" fill="${o.trim}"/>`
+      // 首・顔（座標は characterSvg と同じ。accessoryMarkup がずれない）
+      + `<rect x="54" y="46" width="12" height="12" fill="${HERO_SKIN}"/>`
+      + `<circle cx="60" cy="32" r="20" fill="${HERO_SKIN}" stroke="rgba(0,0,0,.14)"/>`
+      + `<g${k('hero-hair')}>`
+        + `<path d="M40 30 a20 20 0 0 1 40 0 q -10 -10 -20 -6 q -10 -4 -20 6z" fill="${hair}"/>`
+        + `<path d="M39 26 q -5 16 -2 30 q 5 -14 4 -26z" fill="${hair}"/>`
+        + `<path d="M81 26 q 5 16 2 30 q -5 -14 -4 -26z" fill="${hair}"/>`
+      + '</g>'
+      + '<circle cx="53" cy="34" r="2.3" fill="#3a2a20"/><circle cx="67" cy="34" r="2.3" fill="#3a2a20"/>'
+      + '<path d="M56 41 q4 3 8 0" stroke="#b5766a" stroke-width="1.6" fill="none"/>'
+      + accessoryMarkup(eq.accessory)
+    + '</g></svg>';
+}
+
 function cosmeticThumb(id) {
   const c = COSMETIC_BY_ID[id];
   if (!c) return '';
@@ -9873,7 +10659,7 @@ function cosmeticThumb(id) {
 
 
 
-return { esc, boardTheme, boardBackground, stoneMarkup, stoneThumb, boardThumb, characterSvg, cosmeticThumb };
+return { esc, boardTheme, boardBackground, stoneMarkup, stoneThumb, boardThumb, characterSvg, characterHero, auraKindOf, petal, maple, cosmeticThumb };
 });
 __def("../../shared/evaluation.js", function (__req) {
 /**
