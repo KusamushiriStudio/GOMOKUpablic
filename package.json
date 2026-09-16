@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build:edge": "node tools/extract-edge-core.mjs",
-    "test": "node tools/extract-edge-core.mjs && node --test"
+    "test": "node tools/extract-edge-core.mjs && node tools/build-figma-plugin.mjs && node --test",
+    "build:figma": "node tools/build-figma-plugin.mjs"
   }
 }
