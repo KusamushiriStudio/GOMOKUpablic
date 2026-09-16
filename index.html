@@ -1504,6 +1504,80 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
   .board-svg .strike-ring { display: none; }
 }
 
+/* ───────── §30・§31 ガチャ ───────── */
+.gacha-head { padding: 0; overflow: hidden; }
+
+.gacha-banner {
+  position: relative;
+  aspect-ratio: 320 / 150;
+  max-width: 100%;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line-kin, rgba(201,162,39,.45));
+}
+.gacha-banner-art, .gacha-banner-art svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.gacha-banner-char {
+  position: absolute;
+  right: 4%;
+  bottom: -6%;
+  width: 42%;
+  max-width: 150px;
+  filter: drop-shadow(0 6px 14px rgba(0,0,0,.45));
+}
+.gacha-banner-char svg { width: 100%; height: auto; display: block; }
+/* 文字は画像へ焼き込まない（§31）。読めるよう、下に濃い帯を敷く。 */
+.gacha-banner-text {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 22px 12px 8px;
+  background: linear-gradient(180deg, rgba(8,10,9,0), rgba(8,10,9,.82) 58%);
+  color: #f6efdc;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8);
+}
+.gacha-season { font-size: 11px; letter-spacing: .14em; color: var(--kin-bright, #d9b75c); }
+.gacha-title {
+  font-family: var(--font-brush, var(--font));
+  font-size: clamp(20px, 6.4vw, 28px);
+  letter-spacing: .1em;
+  line-height: 1.2;
+}
+.gacha-lead { font-size: 12px; color: rgba(246,239,220,.85); }
+
+.gacha-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-1, rgba(36,48,31,.10));
+}
+.gacha-pick-face { width: 40px; flex: none; }
+.gacha-pick-face svg { width: 100%; height: auto; display: block; }
+.gacha-pick-name { font-weight: 700; font-size: 14px; }
+.gacha-purse { text-align: right; white-space: nowrap; }
+.gacha-purse b { display: block; font-size: 16px; color: var(--kin, #c9a227); }
+
+.gacha-buy { display: grid; grid-template-columns: 1fr 1.25fr; gap: 8px; padding: 12px; }
+.gacha-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-height: 62px;           /* タップ領域は 44px 以上（§50） */
+  padding: 8px 6px;
+  line-height: 1.25;
+}
+.gacha-btn strong { font-size: var(--fs-btn, 16px); }
+.gacha-btn span { font-size: 12px; opacity: .92; }
+.gacha-btn em { font-style: normal; font-size: 11px; font-weight: 700; color: var(--shu-ink, #fff5f1); background: var(--shu, #b5402f); border-radius: 999px; padding: 1px 8px; }
+
+@media (max-width: 340px) {
+  .gacha-buy { grid-template-columns: 1fr; }
+  .gacha-banner-char { width: 38%; }
+}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -12239,27 +12313,108 @@ const { audio } = __req("audio.js");
 const { RARITIES, GACHA_POOL, GACHA_POOL_BY_RARITY, COSMETIC_BY_ID, CHARACTER_BY_ID, SLOT_LABEL, GACHA_HISTORY_LIMIT, parseDrawId } = __req("../../shared/constants.js");
 const { currentOfferRates } = __req("../../shared/profile.js");
 
+/** 章の色。バナーの空をその日の季節で塗る（§31）。 */
+const BANNER_SEASON = [
+  { key: 'spring', label: '春　花の候', sky: ['#3b2740', '#7d4a63'], glow: '#f7b7cf' },
+  { key: 'summer', label: '夏　風の候', sky: ['#132b3f', '#2f6c86'], glow: '#9fe3ef' },
+  { key: 'autumn', label: '秋　月の候', sky: ['#2c2033', '#7a4230'], glow: '#f0b064' },
+  { key: 'winter', label: '冬　雪の候', sky: ['#1a2333', '#43566f'], glow: '#cfe4f5' },
+];
+
+/**
+ * その日の推しキャラと季節。
+ *
+ * 排出率は動かさない（この常設ガチャに確率上昇は無い）。毎日同じ絵だと飽きるので
+ * 日付で見た目だけを回している。日付が変わっても引ける中身は同じ。
+ */
+function bannerOfDay() {
+  const day = Math.floor(Date.now() / 86400000);
+  const ids = Object.keys(CHARACTER_BY_ID);
+  const ch = CHARACTER_BY_ID[ids[day % ids.length]];
+  const season = BANNER_SEASON[Math.floor(day / 7) % BANNER_SEASON.length];
+  return { ch, season };
+}
+
+/**
+ * 大型バナー（§31）。
+ *
+ * 文字は画像へ焼き込まず、上に HTML の文字として重ねる。あとから文言を変えたり
+ * 小さい画面で折り返したりできるようにするため。
+ */
+function gachaBanner(ch, season) {
+  const [sky1, sky2] = season.sky;
+  const art = `<svg viewBox="0 0 320 150" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">`
+    + `<defs>`
+    + `<linearGradient id="gbSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${sky1}"/><stop offset="1" stop-color="${sky2}"/></linearGradient>`
+    + `<radialGradient id="gbGlow"><stop offset="0" stop-color="${season.glow}" stop-opacity=".85"/><stop offset="1" stop-color="${season.glow}" stop-opacity="0"/></radialGradient>`
+    + `</defs>`
+    + `<rect width="320" height="150" fill="url(#gbSky)"/>`
+    + `<circle cx="232" cy="46" r="52" fill="url(#gbGlow)"/>`
+    + `<circle cx="232" cy="46" r="17" fill="#f6efdc" opacity=".92"/>`
+    // 鳥居の影
+    + `<g fill="rgba(0,0,0,.42)">`
+    + `<rect x="46" y="58" width="9" height="74"/><rect x="117" y="58" width="9" height="74"/>`
+    + `<rect x="34" y="52" width="104" height="8" rx="3"/><rect x="40" y="66" width="92" height="6"/>`
+    + `</g>`
+    // 盤の線（手前）
+    + `<g stroke="rgba(255,255,255,.16)" stroke-width="1">`
+    + Array.from({ length: 7 }, (_, i) => `<line x1="0" y1="${118 + i * 5}" x2="320" y2="${118 + i * 5}"/>`).join('')
+    + Array.from({ length: 9 }, (_, i) => `<line x1="${i * 40}" y1="116" x2="${i * 40 - 26}" y2="150"/>`).join('')
+    + `</g>`
+    + `</svg>`;
+  return el('div', { class: 'gacha-banner' }, [
+    el('div', { class: 'gacha-banner-art', 'aria-hidden': 'true', html: art }),
+    el('div', { class: 'gacha-banner-char', 'aria-hidden': 'true', html: characterSvg(ch.id, {}, { size: 116 }) }),
+    el('div', { class: 'gacha-banner-text' }, [
+      el('span', { class: 'gacha-season', text: season.label }),
+      el('strong', { class: 'gacha-title', text: '三色縁起' }),
+      el('span', { class: 'gacha-lead', text: '着せ替え全28種' }),
+    ]),
+  ]);
+}
+
 function renderGacha(root, ctx) {
   const p = ctx.profile();
   const rates = ctx.app.mode === 'ONLINE' && ctx.net.view?.rates ? ctx.net.view.rates : currentOfferRates(p);
+  const { ch, season } = bannerOfDay();
 
-  root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: '常設ガチャ「三色縁起」' }),
-    el('div', { class: 'kv' }, [el('span', { text: '所持ペリカ' }), el('b', { text: fmt(p.perica) })]),
-    el('p', { class: 'muted', text: '全6キャラクターは最初から使用できます。ガチャは着せ替え専用で、1回 1ペリカ／10+1回 10ペリカ（1回分おまけ）。ファッション12点・盤面8点・碁石8点の全28種が対象です。11回目も通常と同じ排出率で、保証枠・天井・確率上昇はありません。' }),
-    el('div', { class: 'grid2', style: 'margin-top:8px' }, [
+  root.appendChild(el('div', { class: 'card gacha-head' }, [
+    gachaBanner(ch, season),
+
+    el('div', { class: 'gacha-pick' }, [
+      el('div', { class: 'gacha-pick-face', 'aria-hidden': 'true', html: characterSvg(ch.id, {}, { size: 44 }) }),
+      el('div', { class: 'grow' }, [
+        el('div', { class: 'gacha-pick-name', text: `今日の推し　${ch.name}` }),
+        el('div', { class: 'muted', text: `${ch.skill.name}／⚡${ch.skill.cost}` }),
+      ]),
+      el('div', { class: 'gacha-purse' }, [
+        el('span', { class: 'muted', text: '所持' }),
+        el('b', { text: `◎ ${fmt(p.perica)}` }),
+      ]),
+    ]),
+
+    el('div', { class: 'gacha-buy' }, [
       el('button', {
-        class: 'btn gold', type: 'button', text: '1回引く（1ペリカ）',
+        class: 'btn gold gacha-btn', type: 'button',
         disabled: p.perica < 1 || ctx.app.gachaBusy,
         onclick: () => doPull(ctx, 1),
-      }),
+      }, [
+        el('strong', { text: '1回引く' }),
+        el('span', { text: '1ペリカ' }),
+      ]),
       el('button', {
-        class: 'btn gold', type: 'button', text: '10回＋1回引く（10ペリカ）',
+        class: 'btn gold gacha-btn is-multi', type: 'button',
         disabled: p.perica < 10 || ctx.app.gachaBusy,
         onclick: () => doPull(ctx, 10),
-      }),
+      }, [
+        el('strong', { text: '10+1回引く' }),
+        el('span', { text: '10ペリカ' }),
+        el('em', { text: '1回分おまけ' }),
+      ]),
     ]),
+
     p.perica < 1 ? el('div', { class: 'notice error', text: 'ペリカが足りません。対戦で獲得してください（勝利3／敗北・引き分け1）。' }) : null,
+    el('p', { class: 'muted', text: '全6キャラクターは最初から使用できます。ガチャは着せ替え専用で、ファッション12点・盤面8点・碁石8点の全28種が対象です。11回目も通常と同じ排出率で、保証枠・天井・確率上昇はありません。推しの表示は絵柄だけで、出やすさは変わりません。' }),
   ]));
 
   if (ctx.app.gachaResult) root.appendChild(resultCard(ctx));
