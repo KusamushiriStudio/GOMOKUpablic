@@ -1578,6 +1578,81 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
   .gacha-banner-char { width: 38%; }
 }
 
+/* ───────── §35〜§37 物語：巻物と道 ───────── */
+.story-scroll {
+  position: relative;
+  border-top: 3px solid var(--kin, #c9a227);
+  border-bottom: 3px solid var(--kin, #c9a227);
+}
+
+.story-road { position: relative; padding-left: 46px; }
+/* 一本の道。塚の中心（左から 22px）を通す。 */
+.story-road::before {
+  content: "";
+  position: absolute;
+  left: 21px;
+  top: 18px;
+  bottom: 18px;
+  width: 2px;
+  background: repeating-linear-gradient(180deg,
+    var(--line-kin, rgba(201,162,39,.45)) 0 8px, transparent 8px 15px);
+}
+
+.story-node { position: relative; padding: 10px 0; border-bottom: 1px solid var(--line-1, rgba(36,48,31,.12)); }
+.story-node:last-child { border-bottom: 0; }
+
+.story-pin {
+  position: absolute;
+  left: -46px;
+  top: 12px;
+  width: 44px;                 /* 見た目は小さくても領域は 44px（§50） */
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.story-pin::before {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface-2, #f7f2e4);
+  border: 2px solid var(--line-2, rgba(36,48,31,.2));
+}
+.story-pin-num, .story-torii { position: relative; font-size: 12px; font-weight: 700; color: var(--fg-2, #4c5644); }
+.story-torii svg { width: 17px; height: 17px; display: block; }
+
+.story-node[data-state="cleared"] .story-pin::before {
+  background: var(--fill-gold, linear-gradient(180deg, #e2c569, #b08d22));
+  border-color: var(--kin, #c9a227);
+}
+.story-node[data-state="cleared"] .story-pin-num,
+.story-node[data-state="cleared"] .story-torii { color: var(--kin-ink, #2a1e05); }
+.story-node[data-state="locked"] { opacity: .62; }
+.story-node[data-state="locked"] .story-pin::before { border-style: dashed; }
+
+/* ボスは塚を大きくし、朱の輪を回す（§37） */
+.story-node.is-boss .story-pin::before {
+  width: 38px;
+  height: 38px;
+  border-width: 3px;
+  border-color: var(--shu, #b5402f);
+  box-shadow: 0 0 0 3px rgba(181, 64, 47, .18);
+}
+.story-node.is-boss .story-torii svg { width: 22px; height: 22px; }
+.story-node.is-boss .story-node-name { font-size: 15px; color: var(--shu, #b5402f); }
+.story-node.is-boss { padding: 14px 0; }
+
+.story-node-name { font-weight: 700; font-size: 13px; }
+.story-node-body { min-width: 0; }
+
+@media (max-width: 340px) {
+  .story-road { padding-left: 38px; }
+  .story-pin { left: -38px; width: 36px; }
+  .story-road::before { left: 17px; }
+}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -14365,9 +14440,11 @@ function renderMap(root, ctx) {
   }))));
 
   const chapter = CHAPTERS.find((c) => c.id === view.chapter) || CHAPTERS[0];
-  root.appendChild(el('div', { class: 'card' }, [
+  root.appendChild(el('div', { class: 'card story-scroll' }, [
     el('p', { class: 'muted', text: chapter.lead }),
-    ...chapter.stages.map((id) => stageRow(ctx, STAGE_BY_ID[id])),
+    // 段は道でつながる（§36）。上から下へ一本の道が通り、塚が並ぶ。
+    el('div', { class: 'story-road', dataset: { season: chapter.season || '' } },
+      chapter.stages.map((id) => stageRow(ctx, STAGE_BY_ID[id]))),
   ]));
 
   root.appendChild(el('div', { class: 'card' }, [
@@ -14390,10 +14467,18 @@ function stageRow(ctx, stage) {
   const training = TRAINING_BOARD_BY_STAGE[stage.id];
   const usable = unlockedSkillsAt(stage.id).map((id) => SKILL_BY_ID[id]?.name).filter(Boolean);
 
-  return el('div', { style: 'padding:8px 0;border-bottom:1px solid var(--cream-2)' }, [
-    el('div', { class: 'row', style: 'justify-content:space-between;gap:10px' }, [
+  // 道の上の一里塚として並べる（§36）。ボスは塚を大きくし、鳥居を立てる（§37）。
+  const state = cleared ? 'cleared' : gate.ok ? 'open' : 'locked';
+  return el('div', { class: `story-node${stage.boss ? ' is-boss' : ''}`, dataset: { state } }, [
+    el('div', { class: 'story-pin', 'aria-hidden': 'true' }, [
+      stage.boss
+        ? el('span', { class: 'story-torii', html: '<svg viewBox="0 0 24 24" focusable="false"><g fill="currentColor"><rect x="2" y="4" width="20" height="2.6" rx="1"/><rect x="4.5" y="8" width="15" height="2"/><rect x="6" y="6" width="2.6" height="14"/><rect x="15.4" y="6" width="2.6" height="14"/></g></svg>' })
+        : el('span', { class: 'story-pin-num', text: String(stage.id) }),
+    ]),
+    el('div', { class: 'story-node-body' }, [
+      el('div', { class: 'row', style: 'justify-content:space-between;gap:10px' }, [
       el('div', { class: 'grow' }, [
-        el('div', { style: 'font-weight:700;font-size:13px', text: `第${stage.id}段　${stage.name}${stage.boss ? '　【ボス】' : ''}` }),
+        el('div', { class: 'story-node-name', text: `第${stage.id}段　${stage.name}${stage.boss ? '　【ボス】' : ''}` }),
         el('div', { class: 'muted', text: `${stage.enemy.name}／${SEASON_LABEL[stage.season] || stage.season}` }),
         training ? el('div', { class: 'muted', text: `修練盤：${training.title}` }) : null,
         unlock ? el('div', { class: 'muted', text: `覚える術：${unlock.sealName}（${unlock.master}）` }) : null,
@@ -14413,8 +14498,9 @@ function stageRow(ctx, stage) {
           onclick: () => enterStage(ctx, stage.id),
         }),
       ]),
+      ]),
+      gate.ok ? null : el('div', { class: 'muted', text: gate.message }),
     ]),
-    gate.ok ? null : el('div', { class: 'muted', text: gate.message }),
   ]);
 }
 
