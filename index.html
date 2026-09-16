@@ -1775,6 +1775,46 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
 :root[data-fx="off"] .boss-gate-art svg circle { animation: none; }
 @media (prefers-reduced-motion: reduce) { .boss-gate-art svg circle { animation: none; } }
 
+/* ───────── §24 Blender で撮った絵の重ね方 ─────────
+   絵は下敷きの SVG の「上」に置く。読み込めた瞬間に親へ is-art が付き、
+   そこで初めて下の SVG を隠す。通信が無い人には SVG がそのまま残る。 */
+.asset-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0;
+  transition: opacity calc(.30s * var(--dur-scale, 1)) var(--ease-out, ease-out);
+}
+.asset-img[data-ready="true"] { opacity: 1; }
+
+.stage-art { position: absolute; pointer-events: none; }
+.stage-art-dais {
+  left: 50%;
+  bottom: 8%;
+  width: 46%;
+  max-width: 220px;
+  transform: translateX(-50%);
+  z-index: 2;                    /* キャラ（3）より下、中景（1）より上 */
+}
+.home-stage:has(.stage-art-dais.is-art) .stage-glow { opacity: .12; }
+
+.stage-art-lantern { bottom: 2%; width: 17%; max-width: 78px; z-index: 5; }
+.stage-art-lantern.is-l { left: 1%; }
+.stage-art-lantern.is-r { right: 1%; transform: scaleX(-1); }
+/* 灯籠の絵が出たら、近景SVGの灯籠は消す（二重に見えるため） */
+.home-stage:has(.stage-art-lantern.is-art) .stage-near .near-lantern { display: none; }
+
+.boss-gate-torii {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.boss-gate-torii .asset-img { width: auto; height: 100%; }
+.boss-gate:has(.boss-gate-torii.is-art) .boss-gate-art svg g[fill="#1a1010"] { opacity: 0; }
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -3836,6 +3876,76 @@ function indexToLabel(index) {
 }
 
 return { BOARD_W, BOARD_H, BOARD_SIZE, CENTER_INDEX, WIN_LENGTH, COLUMN_LABELS, LEGACY_BOARD_W, LEGACY_BOARD_H, SEATS, SEAT_COLORS, MAX_ENERGY, NEIGHBOR_DIRS, LINE_DIRS, RARITIES, RARITY_WEIGHTS, RARITY_WEIGHT_TOTAL, RARITY_LABEL, CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, SKILL_BY_ID, SKILL_BY_CHARACTER, COSMETIC_SLOTS, DEFAULT_EQUIP, COSMETICS, COSMETIC_BY_ID, SLOT_LABEL, CHARACTER_DRAW_PREFIX, characterDrawId, parseDrawId, GACHA_POOL, GACHA_POOL_BY_RARITY, GACHA_POOL_BY_ID, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, MISSIONS, MISSION_BY_ID, ROOM_CODE_LENGTH, ROOM_CODE_ALPHABET, ROOM_CAPACITY, DISCONNECT_GRACE_MS, DISCONNECT_WATCH_INTERVAL_MS, SSE_HEARTBEAT_MS, FX_DURATION_MS, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, STORAGE_EFFECT_KEY, BPM_HOME, BPM_MATCH, STORAGE_KEY, STORAGE_AUDIO_KEY, STORAGE_UI_KEY, STORAGE_LOCK_KEY, LEGACY_STORAGE_KEYS, SAVE_VERSION, SAVE_VERSION_PREV, SAVE_VERSIONS_MIGRATABLE, GACHA_HISTORY_LIMIT, indexToCoord, coordToIndex, inBoard, indexToLabel };
+});
+__def("assets.js", function (__req) {
+/**
+ * Blender で作った絵の取り込み（指示書 §24・§26・§60）。
+ *
+ * ゲーム本体は単一 HTML ファイルで配る。絵をファイルに埋め込むと初回の転送量が
+ * そのぶん増えるので、外に置いて必要になった画面でだけ読む。置き場所は
+ * jsDelivr の commit 固定 URL — このリポジトリが Edge Function の bundle を
+ * 配っているのと同じ方式で、同じ URL は常に同じ中身を返す。
+ *
+ * 守ること
+ *  ・盤面には使わない。対局の交点は SVG のまま描く（§69）。
+ *  ・読めなくても画面は成立させる。絵は既存の SVG の「上に重ねる」だけで、
+ *    読み込めたときにだけ下の SVG を隠す。通信が無い人にも今までの絵が出る。
+ *  ・起動時には読まない。その画面を開いたときに初めて要求する。
+ */
+
+const ASSET_COMMIT = '76fdde7c3bb25478e0e53ad75792234dec2737ce';
+const ASSET_BASE = `https://cdn.jsdelivr.net/gh/KusamushiriStudio/GOMOKUpablic@${ASSET_COMMIT}/assets/images/rendered`;
+
+/** 段（長辺）と、それぞれの実バイト数。srcset の目安に使う。 */
+const TIERS = [512, 1024, 2048];
+
+/**
+ * 使う絵だけを並べる。ここに無い名前は読まない。
+ * w/h は 1024 段での実寸で、縦横比を CSS へ渡すのに使う。
+ */
+const ASSETS = {
+  prop_torii:    { w: 683, h: 1024 },
+  prop_lantern:  { w: 683, h: 1024 },
+  prop_pedestal: { w: 1024, h: 683 },
+};
+
+function assetUrl(name, tier) {
+  return `${ASSET_BASE}/${tier}/${name}.webp`;
+}
+
+/**
+ * 絵を 1 枚。読み込めるまでは何も出さず、読めたら親に is-art を付ける。
+ * CSS 側はその印を見て、下敷きの SVG を隠す。
+ *
+ * @param {string} name ASSETS の名前
+ * @param {{alt?:string, sizes?:string, onload?:Function}} opts
+ * @returns {HTMLImageElement|null}
+ */
+function assetImage(name, opts = {}) {
+  const meta = ASSETS[name];
+  if (!meta || typeof document === 'undefined') return null;
+  const img = document.createElement('img');
+  img.className = 'asset-img';
+  img.alt = opts.alt || '';
+  img.decoding = 'async';
+  img.loading = 'lazy';                 // §26 画面に出るまで取りに行かない
+  img.width = meta.w;
+  img.height = meta.h;
+  img.src = assetUrl(name, 1024);
+  img.srcset = TIERS.map((t) => `${assetUrl(name, t)} ${t}w`).join(', ');
+  img.sizes = opts.sizes || '(max-width: 430px) 60vw, 260px';
+  img.addEventListener('load', () => {
+    img.dataset.ready = 'true';
+    const host = img.parentElement;
+    if (host) host.classList.add('is-art');
+    if (opts.onload) { try { opts.onload(img); } catch { /* 演出の失敗で画面を止めない */ } }
+  }, { once: true });
+  // 失敗しても何もしない。下敷きの SVG がそのまま残る。
+  img.addEventListener('error', () => { img.remove(); }, { once: true });
+  return img;
+}
+
+return { assetImage, assetUrl, ASSET_COMMIT, ASSETS };
 });
 __def("fx.js", function (__req) {
 /**
@@ -10120,6 +10230,7 @@ __def("views/home-stage.js", function (__req) {
  */
 
 const { el, effectLevel, prefersReducedMotion } = __req("util.js");
+const { assetImage } = __req("assets.js");
 const { characterHero, auraKindOf, petal, maple } = __req("art.js");
 const { audio } = __req("audio.js");
 const { CHAPTER_BY_ID, STAGE_BY_ID, STORY_STAGE_COUNT } = __req("../../shared/story/stages.js");
@@ -10220,7 +10331,7 @@ function branch(season) {
 
 function lantern(cx, base) {
   const top = base - 104;
-  return `<g transform="translate(${cx} 0)">`
+  return `<g class="near-lantern" transform="translate(${cx} 0)">`
     + `<rect x="-17" y="${base - 30}" width="34" height="12" rx="3" fill="var(--stone-2)"/>`
     + `<rect x="-9" y="${base - 56}" width="18" height="28" fill="var(--stone-2)"/>`
     + `<rect x="-23" y="${top + 34}" width="46" height="10" rx="3" fill="var(--stone-2)"/>`
@@ -10382,6 +10493,19 @@ function buildStage(ctx, o, level, still) {
   if (weather) stage.appendChild(weather);
 
   stage.appendChild(el('div', { class: 'stage-layer stage-near', html: nearLayer(o.season) }));
+
+  // Blender で撮った台座と灯籠を重ねる（§24）。読めたときだけ下の SVG を隠す。
+  // 通信が無い人には、これまでどおり SVG の台座と灯籠が出る。
+  const dais = el('div', { class: 'stage-art stage-art-dais', 'aria-hidden': 'true' });
+  const daisImg = assetImage('prop_pedestal', { sizes: '(max-width: 430px) 52vw, 220px' });
+  if (daisImg) { dais.appendChild(daisImg); stage.appendChild(dais); }
+
+  for (const side of ['l', 'r']) {
+    const host = el('div', { class: `stage-art stage-art-lantern is-${side}`, 'aria-hidden': 'true' });
+    const img = assetImage('prop_lantern', { sizes: '(max-width: 430px) 18vw, 78px' });
+    if (img) { host.appendChild(img); stage.appendChild(host); }
+  }
+
   stage.appendChild(bindStageTap(stage, charWrap, still));
 
   stage.appendChild(el('div', { class: 'stage-plate' }, [
@@ -14307,6 +14431,7 @@ const { characterSvg } = __req("art.js");
 const { audio } = __req("audio.js");
 const { fx } = __req("fx.js");
 const { renderMatch, resetSelection, clearCpuTimer } = __req("views/play.js");
+const { assetImage } = __req("assets.js");
 const { STAGES, CHAPTERS, STAGE_BY_ID, TRAINING_BOARD_BY_STAGE, SKILL_UNLOCK_BY_STAGE, TELEGRAPHS, STORY_TOTAL_PERICA, STORY_STAGE_COUNT, bossPhasesOfStage, unlockedSkillsAt, SEAL_BY_STAGE, BOSS_SHOW } = __req("../../shared/story/stages.js");
 const { createStoryMatch, applyPlayerAction, runEnemyTurn, storyOutcome, PLAYER_SEAT, ENEMY_SEAT } = __req("../../shared/story/engine.js");
 const { canEnterStage, beginStoryMatch, endStoryMatch, grantStoryClear, storyTotals, appearanceFor, markTalkRead, isTalkRead, equipCosmetic } = __req("../../shared/profile.js");
@@ -14828,10 +14953,15 @@ function renderBossShow(root, ctx, kind) {
   card.appendChild(sceneBand(stage, { title: kind === 'entry' ? `${stage.enemy.name}　登場` : `${stage.enemy.name}　撃破` }));
   // ボスは通常の段と明確に違って見せる（§37）。鳥居をくぐって現れ、
   // 背に赤い家紋を負う。ここで盤面は出ないので、大きくしても支障はない。
-  card.appendChild(el('div', { class: 'boss-gate' }, [
+  const gate = el('div', { class: 'boss-gate' }, [
     el('div', { class: 'boss-gate-art', 'aria-hidden': 'true', html: bossGateSvg() }),
     el('div', { class: 'boss-gate-figure' }, [enemyFigure(stage, kind === 'entry' ? 1 : 0, 150)]),
-  ]));
+  ]);
+  // Blender で撮った鳥居を重ねる。読めたときだけ影絵の鳥居を隠す（§24・§37）。
+  const torii = el('div', { class: 'boss-gate-torii', 'aria-hidden': 'true' });
+  const toriiImg = assetImage('prop_torii', { sizes: '(max-width: 430px) 86vw, 380px' });
+  if (toriiImg) { torii.appendChild(toriiImg); gate.appendChild(torii); }
+  card.appendChild(gate);
   card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:12px' }, [
     el('div', { class: 'grow' }, [
       el('div', { style: 'font-weight:700;font-size:15px', text: stage.enemy.name }),
