@@ -106,7 +106,10 @@ def _finish(obj, name, budget_key, base=True, smooth=None, uv=True):
 
 def build_board(skin="default"):
     T.reset_scene()
-    kaya = T.make_material("mat_board_kaya", T.HEX["kaya_light"], roughness=0.42)
+    # 盤面は木目を持たせる（§16）。手続き材質は GLB に乗らないので、
+    # GLB 側は単色のまま、レンダ用にだけ木目を出す。
+    kaya = T.make_wood_material("mat_board_kaya", T.HEX["kaya_light"],
+                                T.HEX["kaya_dark"], scale=26.0, roughness=0.42)
     keyaki = T.make_material("mat_board_leg", T.HEX["keyaki"], roughness=0.5)
     sumi = T.make_material("mat_board_sumi", T.HEX["sumi"], roughness=0.85)
 

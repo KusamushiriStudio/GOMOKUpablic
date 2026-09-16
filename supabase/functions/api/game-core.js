@@ -370,7 +370,7 @@ const SSE_HEARTBEAT_MS = 20_000;
 const FX_DURATION_MS = 1100; // 通常演出は約 1.1 秒
 const DEFAULT_AUDIO = Object.freeze({ bgm: 0.24, sfx: 0.40, ambient: 0.30, muted: false });
 /** 季節エフェクトの量（物語の天候表現）。OFF でも固定背景から季節が分かる。 */
-const EFFECT_LEVELS = Object.freeze(['off', 'low', 'normal']);
+const EFFECT_LEVELS = Object.freeze(['off', 'low', 'normal', 'high']);
 const DEFAULT_EFFECT_LEVEL = 'normal';
 const STORAGE_EFFECT_KEY = 'triad.effects.v1';
 const BPM_HOME = 84;

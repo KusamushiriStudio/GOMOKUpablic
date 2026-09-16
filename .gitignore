@@ -2,3 +2,7 @@ dist/
 supabase/.temp/
 .design/
 .tmpedit/
+
+# Blender の自動バックアップと Python のキャッシュ
+*.blend1
+__pycache__/
