@@ -1485,6 +1485,25 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
   .home-stage * { animation: none !important; }
   .stage-weather { opacity: .32; }
 }
+/* ───────── §19 盤へ打ち付ける ─────────
+   石そのものは動かさない（交点からずれて見えるため）。広がる波紋だけで
+   「打った」感じを出す。0.30 秒で終わり、あとには何も残らない。
+   演出量 OFF では波紋を出さない。 */
+.board-svg .strike-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: strike-ring calc(.30s * var(--dur-scale, 1)) var(--ease-out, ease-out) 1;
+  opacity: 0;
+}
+@keyframes strike-ring {
+  0%   { transform: scale(.42); opacity: .95; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+:root[data-fx="off"] .board-svg .strike-ring { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .board-svg .strike-ring { display: none; }
+}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -10278,6 +10297,50 @@ function boardTheme(boardId) {
   return { ...s, id: COSMETIC_BY_ID[boardId] ? boardId : DEFAULT_EQUIP.board };
 }
 
+/**
+ * 木目（§16）。
+ *
+ * 盤の線より必ず薄くする。木に見せるのが目的で、交点を読みにくくしては本末転倒。
+ * 縦に流れる不均一な筋と、節をいくつか置くだけにとどめる。
+ */
+function woodGrain(w, h, t) {
+  const ink = t.dark ? 'rgba(0,0,0,.30)' : 'rgba(96,66,28,.16)';
+  const lite = t.dark ? 'rgba(255,255,255,.05)' : 'rgba(255,248,226,.22)';
+  const streaks = Array.from({ length: 13 }, (_, i) => {
+    // 等間隔に並べず、決まった数列でずらす（毎回同じ絵になる）
+    const x = ((i * 79) % 100) / 100 * w;
+    const bend = ((i * 37) % 9) - 4;
+    const thin = (((i * 53) % 7) + 3) / 10;
+    return `<path d="M${x.toFixed(1)} 0 C ${(x + bend).toFixed(1)} ${(h * 0.3).toFixed(1)}, ${(x - bend).toFixed(1)} ${(h * 0.66).toFixed(1)}, ${x.toFixed(1)} ${h.toFixed(1)}" stroke-width="${thin.toFixed(2)}"/>`;
+  }).join('');
+  const knots = [[0.22, 0.17], [0.74, 0.44], [0.4, 0.79]].map(([fx, fy]) => {
+    const cx = (w * fx).toFixed(1);
+    const cy = (h * fy).toFixed(1);
+    return `<ellipse cx="${cx}" cy="${cy}" rx="${(w * 0.035).toFixed(1)}" ry="${(w * 0.017).toFixed(1)}"/>`
+      + `<ellipse cx="${cx}" cy="${cy}" rx="${(w * 0.018).toFixed(1)}" ry="${(w * 0.009).toFixed(1)}"/>`;
+  }).join('');
+  return `<g fill="none" stroke="${ink}" opacity=".9">${streaks}</g>`
+    + `<g fill="none" stroke="${ink}" stroke-width=".7" opacity=".7">${knots}</g>`
+    + `<rect x="0" y="0" width="${w}" height="${(h * 0.5).toFixed(1)}" fill="${lite}"/>`;
+}
+
+/**
+ * 盤の縁と面取り（§16）。
+ *
+ * いちばん上に重ねるが、対局部分の内側には入らない。上辺と左辺を明るく、
+ * 下辺と右辺を暗くして、厚みのある一枚板に見せる。
+ */
+function boardFrame(w, h, t) {
+  const hi = t.dark ? 'rgba(255,255,255,.14)' : 'rgba(255,250,235,.55)';
+  const lo = t.dark ? 'rgba(0,0,0,.45)' : 'rgba(92,62,24,.35)';
+  const edge = t.dark ? 'rgba(0,0,0,.55)' : 'rgba(92,62,24,.45)';
+  return `<g fill="none" pointer-events="none">`
+    + `<path d="M0.9 ${h.toFixed(1)} V0.9 H${(w - 0.9).toFixed(1)}" stroke="${hi}" stroke-width="1.8"/>`
+    + `<path d="M${(w - 0.9).toFixed(1)} 0.9 V${(h - 0.9).toFixed(1)} H0.9" stroke="${lo}" stroke-width="1.8"/>`
+    + `<rect x="2.6" y="2.6" width="${(w - 5.2).toFixed(1)}" height="${(h - 5.2).toFixed(1)}" rx="3" stroke="${edge}" stroke-width="1" opacity=".8"/>`
+    + `</g>`;
+}
+
 /** 盤面背景（グラデーション定義 + 装飾）を返す */
 function boardBackground(boardId, w, h) {
   const t = boardTheme(boardId);
@@ -10346,6 +10409,8 @@ function boardBackground(boardId, w, h) {
   return {
     defs: `<linearGradient id="${gid}" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" stop-color="${t.bg}"/><stop offset="1" stop-color="${t.bg2}"/></linearGradient>`,
     rect: `<rect x="0" y="0" width="${w}" height="${h}" fill="url(#${gid})"/>`,
+    grain: woodGrain(w, h, t),
+    frame: boardFrame(w, h, t),
     motif,
     line: t.line,
     ink: t.ink,
@@ -10368,6 +10433,16 @@ function maple(x, y, r, color) {
 /**
  * 石の SVG（座標つき）。どの模様でも席色と数字 1/2/3 を必ず維持する。
  */
+/**
+ * 席ごとの縁の描き方。色のほかに「実線・破線・点線」という手がかりを持たせる。
+ * 白黒で印刷しても、色の見分けがつかない人でも、どの石か分かるようにするため（§18）。
+ */
+const SEAT_RIM = {
+  1: '',
+  2: ' stroke-dasharray="7 4"',
+  3: ' stroke-dasharray="2 4" stroke-linecap="round"',
+};
+
 function stoneMarkup(seat, stoneId, cx, cy, r) {
   const base = SEAT_COLORS[seat] || '#333';
   const pat = styleOf(stoneId, DEFAULT_EQUIP.stone).pattern;
@@ -10413,8 +10488,17 @@ function stoneMarkup(seat, stoneId, cx, cy, r) {
     default: // gloss
       deco = `<ellipse cx="${(cx - r * 0.28).toFixed(2)}" cy="${(cy - r * 0.32).toFixed(2)}" rx="${(r * 0.34).toFixed(2)}" ry="${(r * 0.24).toFixed(2)}" fill="rgba(255,255,255,.55)" transform="rotate(-28 ${(cx - r * 0.28).toFixed(2)} ${(cy - r * 0.32).toFixed(2)})"/>`;
   }
+  // 石は平らな円ではなく、厚みのある碁石として置く（§18）。
+  //   影 → 胴 → 下の落ち込み → 上の照り → 縁。
+  // 縁の破線は席ごとに変える。色が見分けにくい人にも、席番号の数字とあわせて
+  // 2つ目・3つ目の手がかりが残るようにするため（色だけで識別させない）。
+  const rim = SEAT_RIM[seat] || SEAT_RIM[1];
   return `<g class="stone" data-seat="${seat}">`
-    + `<circle cx="${x}" cy="${y}" r="${R}" fill="${base}" stroke="rgba(0,0,0,.35)" stroke-width="${(r * 0.08).toFixed(2)}"/>`
+    + `<ellipse cx="${x}" cy="${(cy + r * 0.20).toFixed(2)}" rx="${(r * 0.96).toFixed(2)}" ry="${(r * 0.72).toFixed(2)}" fill="rgba(0,0,0,.30)"/>`
+    + `<circle cx="${x}" cy="${y}" r="${R}" fill="${base}"/>`
+    + `<ellipse cx="${x}" cy="${(cy + r * 0.34).toFixed(2)}" rx="${(r * 0.86).toFixed(2)}" ry="${(r * 0.52).toFixed(2)}" fill="rgba(0,0,0,.20)"/>`
+    + `<ellipse cx="${(cx - r * 0.24).toFixed(2)}" cy="${(cy - r * 0.34).toFixed(2)}" rx="${(r * 0.52).toFixed(2)}" ry="${(r * 0.34).toFixed(2)}" fill="rgba(255,255,255,.26)" transform="rotate(-24 ${(cx - r * 0.24).toFixed(2)} ${(cy - r * 0.34).toFixed(2)})"/>`
+    + `<circle cx="${x}" cy="${y}" r="${R}" fill="none" stroke="rgba(0,0,0,.40)" stroke-width="${(r * 0.09).toFixed(2)}"${rim}/>`
     + deco
     + `<text x="${x}" y="${(cy + r * 0.34).toFixed(2)}" text-anchor="middle" font-size="${(r * 0.95).toFixed(2)}" font-weight="700" fill="#fff" stroke="rgba(0,0,0,.45)" stroke-width="${(r * 0.06).toFixed(2)}" paint-order="stroke" font-family="system-ui,sans-serif">${seat}</text>`
     + '</g>';
@@ -11757,6 +11841,7 @@ class BoardView {
     parts.push(`<svg class="board-svg" viewBox="0 0 ${VW} ${VH}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="対戦盤面 ${w}列${h}行">`);
     parts.push(`<defs>${bg.defs}<clipPath id="stoneClip"><circle cx="0" cy="0" r="${S * 0.42}"/></clipPath></defs>`);
     parts.push(bg.rect);
+    parts.push(bg.grain || '');
     parts.push(bg.motif);
 
     // 罫線
@@ -11815,9 +11900,19 @@ class BoardView {
     }
 
     // 直前着手
+    // 打ち込みの演出は「直前手が変わった瞬間」だけ。盤は定期取得のたびに
+    // まるごと描き直されるので、これをやらないと8秒ごとに打ち直して見える（§19）。
+    const struck = lastIdx != null && state.stones[lastIdx] && this._lastStruck !== `${state.matchId}:${lastIdx}`;
     if (lastIdx != null && state.stones[lastIdx]) {
+      this._lastStruck = `${state.matchId}:${lastIdx}`;
       const p = px(lastIdx);
-      parts.push(`<circle cx="${p.x}" cy="${p.y}" r="${S * 0.16}" fill="#fff" stroke="rgba(0,0,0,.5)" stroke-width="1.4"/>`);
+      if (struck) {
+        // 盤へ打ち付けたときに広がる波紋。0.30秒で消える。
+        parts.push(`<circle class="strike-ring" cx="${p.x}" cy="${p.y}" r="${(S * 0.42).toFixed(1)}" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="2.4" pointer-events="none"/>`);
+      }
+      // 石の中心には席番号がある。直前手は中心を塞がないよう、石の外側の輪で示す。
+      parts.push(`<circle cx="${p.x}" cy="${p.y}" r="${(S * 0.50).toFixed(1)}" fill="none" stroke="#fff" stroke-width="2.6"/>`);
+      parts.push(`<circle cx="${p.x}" cy="${p.y}" r="${(S * 0.50).toFixed(1)}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="1"/>`);
     }
 
     // 勝利列
@@ -11848,6 +11943,8 @@ class BoardView {
       parts.push(`<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#1f6f4a" stroke-width="3" stroke-dasharray="6 4"/>`);
     }
 
+    // 盤の縁は最後に重ねる。対局部分には入らないので交点は隠れない（§16・§69）
+    parts.push(bg.frame || '');
     parts.push('</svg>');
     this.container.innerHTML = parts.join('');
     this.svg = this.container.querySelector('svg');
