@@ -1724,6 +1724,32 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
 .presence[data-state="IN_MATCH"] { color: var(--kin, #c9a227); }
 .presence[data-state="OFFLINE"]  { color: var(--fg-4, #9aa091); }
 
+/* ───────── §20 五目完成 ─────────
+   金の輪がひとつずつ灯り、五石をつなぐ線が引かれる。1秒以内に静止する。 */
+.board-svg .win-mark {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: win-mark calc(.42s * var(--dur-scale, 1)) var(--ease-out, ease-out) both;
+}
+.board-svg .win-mark:nth-of-type(2) { animation-delay: calc(.06s * var(--dur-scale, 1)); }
+.board-svg .win-mark:nth-of-type(3) { animation-delay: calc(.12s * var(--dur-scale, 1)); }
+.board-svg .win-mark:nth-of-type(4) { animation-delay: calc(.18s * var(--dur-scale, 1)); }
+.board-svg .win-mark:nth-of-type(5) { animation-delay: calc(.24s * var(--dur-scale, 1)); }
+@keyframes win-mark {
+  0%   { transform: scale(1.6); opacity: 0; }
+  60%  { transform: scale(.94); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.board-svg .win-line {
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  animation: win-line calc(.5s * var(--dur-scale, 1)) var(--ease-out, ease-out) calc(.2s * var(--dur-scale, 1)) both;
+}
+@keyframes win-line { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .board-svg .win-mark, .board-svg .win-line { animation: none; stroke-dashoffset: 0; opacity: 1; }
+}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -12180,9 +12206,18 @@ class BoardView {
 
     // 勝利列
     if (winLine.size) {
-      for (const i of winLine) {
-        const p = px(i);
-        parts.push(`<circle cx="${p.x}" cy="${p.y}" r="${S * 0.56}" fill="none" stroke="#c9a227" stroke-width="4"/>`);
+      // 決着は一目で分かるようにする（§20）。五石を金の輪で囲み、
+      // その五石を一本の墨の線でつなぐ。線は石の上を通るが、
+      // 半透明なので下の席番号は読めるままにしておく。
+      const pts = [...winLine].map((i) => px(i));
+      if (pts.length >= 2) {
+        const a = pts[0];
+        const b = pts[pts.length - 1];
+        parts.push(`<line class="win-line" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="rgba(255,255,255,.55)" stroke-width="9" stroke-linecap="round"/>`);
+        parts.push(`<line class="win-line" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#c9a227" stroke-width="3.4" stroke-linecap="round"/>`);
+      }
+      for (const p of pts) {
+        parts.push(`<circle class="win-mark" cx="${p.x}" cy="${p.y}" r="${S * 0.56}" fill="none" stroke="#c9a227" stroke-width="4"/>`);
       }
     }
 
