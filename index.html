@@ -1653,6 +1653,77 @@ label.field > span { display: block; margin-bottom: 4px; color: var(--ink-soft);
   .story-road::before { left: 17px; }
 }
 
+/* ───────── §28・§80 着せ替え ───────── */
+.wardrobe-card { padding-top: 0; }
+
+.wardrobe-stage {
+  position: relative;
+  margin: 0 -12px 10px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--line-1, rgba(36,48,31,.12));
+  background:
+    radial-gradient(120% 70% at 50% 108%, var(--aura-lo, rgba(201,162,39,.18)), transparent 70%),
+    linear-gradient(180deg, var(--bg-3, #161d1a), transparent 78%);
+  text-align: center;
+}
+.wardrobe-hero {
+  width: min(62vw, 230px);
+  margin: 0 auto;
+}
+.wardrobe-hero svg { width: 100%; height: auto; display: block; }
+.wardrobe-name { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.wardrobe-name strong { font-family: var(--font-brush, var(--font)); font-size: 18px; letter-spacing: .08em; }
+.wardrobe-name span { font-size: 12px; color: var(--fg-3, #6f7766); }
+
+.wardrobe-now { display: flex; flex-direction: column; gap: 2px; }
+.wardrobe-thumbs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.wardrobe-thumbs figure { margin: 0; text-align: center; }
+.wardrobe-thumb {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line-2, rgba(36,48,31,.2));
+  aspect-ratio: 1;
+}
+.wardrobe-thumb svg { width: 100%; height: 100%; display: block; }
+.wardrobe-thumbs figcaption { font-size: 10px; color: var(--fg-3, #6f7766); margin-top: 2px; }
+
+@media (max-width: 340px) {
+  .wardrobe-hero { width: 66vw; }
+  .wardrobe-thumbs { gap: 6px; }
+}
+
+/* ───────── §43・§44 フレンド：和紙の上の木札 ───────── */
+.friend-row {
+  position: relative;
+  border-radius: var(--r-2, 8px);
+  border: 1px solid var(--line-2, rgba(36,48,31,.2));
+  background: var(--surface-2, #f7f2e4);
+  box-shadow: var(--shadow-1, 0 1px 2px rgba(20,45,30,.12));
+  padding: 10px 12px 10px 16px;
+  margin-bottom: 8px;
+}
+/* 木札の紐を通す穴に見立てた、左端の朱の帯 */
+.friend-row::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 4px;
+  border-radius: 0 3px 3px 0;
+  background: var(--kin, #c9a227);
+  opacity: .75;
+}
+.friend-row:last-child { margin-bottom: 0; }
+
+.presence { font-size: 11px; line-height: 1; margin-right: 2px; }
+.presence[data-state="ONLINE"]   { color: var(--ok, #2b7d4f); }
+.presence[data-state="IN_MATCH"] { color: var(--kin, #c9a227); }
+.presence[data-state="OFFLINE"]  { color: var(--fg-4, #9aa091); }
+
 </style>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314432f'/%3E%3Ccircle cx='11' cy='12' r='4.5' fill='%23f4efe1'/%3E%3Ccircle cx='21' cy='14' r='4.5' fill='%23cfe0cd'/%3E%3Ccircle cx='16' cy='22' r='4.5' fill='%23e0b64a'/%3E%3C/svg%3E">
 </head>
@@ -12197,7 +12268,7 @@ __def("views/collection.js", function (__req) {
 const { el, fmt, toast, confirmDialog } = __req("util.js");
 const { skillInRuleset } = __req("../../shared/rules.js");
 const { DEFAULT_PVP_RULESET } = __req("../../shared/rulesets.js");
-const { characterSvg, cosmeticThumb, boardThumb, stoneThumb } = __req("art.js");
+const { characterSvg, characterHero, cosmeticThumb, boardThumb, stoneThumb } = __req("art.js");
 const { CHARACTERS, CHARACTER_BY_ID, COSMETICS, COSMETIC_BY_ID, SLOT_LABEL, DEFAULT_EQUIP, TRAIN_COST_PERICA, TRAIN_CHAR_XP } = __req("../../shared/constants.js");
 const { charLevel, charLevelProgress, ownsCosmetic } = __req("../../shared/profile.js");
 
@@ -12283,21 +12354,28 @@ function renderWardrobe(root, ctx) {
     }))),
   ]));
 
-  // プレビュー
-  root.appendChild(el('div', { class: 'card' }, [
-    el('h2', { class: 'section-title', text: 'プレビュー' }),
-    el('div', { class: 'row', style: 'align-items:flex-start;flex-wrap:nowrap' }, [
-      el('div', { style: 'flex:none', html: characterSvg(charId, eq, { size: 108 }) }),
-      el('div', { class: 'grow' }, [
-        line('衣装', COSMETIC_BY_ID[eq.outfit]?.name),
-        line('飾り', COSMETIC_BY_ID[eq.accessory]?.name),
-        line('盤面', COSMETIC_BY_ID[common.board]?.name),
-        line('碁石', COSMETIC_BY_ID[common.stone]?.name),
-        el('div', { class: 'row', style: 'margin-top:6px' }, [
-          el('div', { style: 'width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid var(--cream-2)', html: boardThumb(common.board) }),
-          el('div', { style: 'width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid var(--cream-2)', html: stoneThumb(common.stone, 1) }),
-          el('div', { style: 'width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid var(--cream-2)', html: stoneThumb(common.stone, 2) }),
-        ]),
+  // プレビュー：キャラを大きく見せ、いま着ているものをその下に並べる（§28・§80）
+  root.appendChild(el('div', { class: 'card wardrobe-card' }, [
+    el('div', { class: 'wardrobe-stage' }, [
+      el('div', {
+        class: 'wardrobe-hero',
+        html: characterHero(charId, eq, { uid: `wd-${charId}`, idle: true }),
+      }),
+      el('div', { class: 'wardrobe-name' }, [
+        el('strong', { text: CHARACTER_BY_ID[charId]?.name || '' }),
+        el('span', { text: COSMETIC_BY_ID[eq.outfit]?.name || '' }),
+      ]),
+    ]),
+    el('div', { class: 'wardrobe-now' }, [
+      line('衣装', COSMETIC_BY_ID[eq.outfit]?.name),
+      line('飾り', COSMETIC_BY_ID[eq.accessory]?.name),
+      line('盤面', COSMETIC_BY_ID[common.board]?.name),
+      line('碁石', COSMETIC_BY_ID[common.stone]?.name),
+      el('div', { class: 'wardrobe-thumbs' }, [
+        el('figure', {}, [el('div', { class: 'wardrobe-thumb', html: boardThumb(common.board) }), el('figcaption', { text: '盤面' })]),
+        el('figure', {}, [el('div', { class: 'wardrobe-thumb', html: stoneThumb(common.stone, 1) }), el('figcaption', { text: 'P1の石' })]),
+        el('figure', {}, [el('div', { class: 'wardrobe-thumb', html: stoneThumb(common.stone, 2) }), el('figcaption', { text: 'P2の石' })]),
+        el('figure', {}, [el('div', { class: 'wardrobe-thumb', html: stoneThumb(common.stone, 3) }), el('figcaption', { text: 'P3の石' })]),
       ]),
     ]),
     el('p', { class: 'muted', text: '衣装・飾りはキャラごと、盤面・碁石はプロフィール共通です。装備しても所持数は減りません。' }),
@@ -13148,7 +13226,13 @@ function needsWorld(root, ctx, title) {
 }
 
 const STATUS_LABEL = { ONLINE: 'オンライン', IN_MATCH: '対戦中', OFFLINE: 'オフライン' };
-const STATUS_DOT = { ONLINE: '#2e9e5b', IN_MATCH: '#c9a227', OFFLINE: '#b6b0a0' };
+/**
+ * 在席のしるし（§44）。
+ *
+ * 色だけに頼らない。塗りつぶし・二重丸・白抜きと形も変えてあるので、
+ * 色の差が分かりにくくても、文字と合わせて3つの手がかりが残る。
+ */
+const STATUS_MARK = { ONLINE: '●', IN_MATCH: '◉', OFFLINE: '○' };
 
 /** 「5分前」「2時間前」「昨日」。位置やIPのような情報は出さない（§28）。 */
 function agoLabel(ts) {
@@ -13172,7 +13256,7 @@ function playerRow(ctx, p, actions = []) {
     el('div', { class: 'grow', style: 'min-width:0' }, [
       el('div', { class: 'friend-name', text: p.name || '旅人' }),
       el('div', { class: 'friend-meta' }, [
-        el('span', { class: 'dot', style: `background:${STATUS_DOT[p.status] || STATUS_DOT.OFFLINE}` }),
+        el('span', { class: 'presence', dataset: { state: p.status || 'OFFLINE' }, 'aria-hidden': 'true', text: STATUS_MARK[p.status] || STATUS_MARK.OFFLINE }),
         el('span', { text: STATUS_LABEL[p.status] || 'オフライン' }),
         p.status === 'OFFLINE' && p.lastSeenAt ? el('span', { class: 'muted', text: agoLabel(p.lastSeenAt) }) : null,
       ]),
@@ -13380,7 +13464,7 @@ function renderProfile(root, ctx) {
       el('div', { class: 'grow', style: 'min-width:0' }, [
         el('div', { style: 'font-family:var(--font);font-size:17px', text: p.name }),
         el('div', { class: 'friend-meta' }, [
-          el('span', { class: 'dot', style: `background:${STATUS_DOT[p.status]}` }),
+          el('span', { class: 'presence', dataset: { state: p.status || 'OFFLINE' }, 'aria-hidden': 'true', text: STATUS_MARK[p.status] || STATUS_MARK.OFFLINE }),
           el('span', { text: STATUS_LABEL[p.status] }),
           p.status === 'OFFLINE' && p.lastSeenAt ? el('span', { class: 'muted', text: agoLabel(p.lastSeenAt) }) : null,
         ]),
