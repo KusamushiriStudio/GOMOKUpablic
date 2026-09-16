@@ -116,8 +116,29 @@ def studio_lights(center, span):
     return out
 
 
+def apply_render_materials(name):
+    """描画のときだけ材質を差し替える。
+
+    木目のような手続き材質は glTF に乗らない。モデル側を木目にしてしまうと、
+    書き出した GLB の基本色が白に落ちて盤が真っ白になる（実際にそうなった）。
+    なので形は単色で作り、絵を撮るときにだけここで木目へ差し替える。
+    """
+    if name != "board_default":
+        return
+    wood = T.make_wood_material("mat_board_kaya_render", T.HEX["kaya_light"],
+                                T.HEX["kaya_dark"], scale=26.0, roughness=0.42)
+    for ob in bpy.context.scene.objects:
+        if ob.type != "MESH":
+            continue
+        for i, m in enumerate(ob.data.materials):
+            if m and m.name.startswith("mat_board_kaya"):
+                ob.data.materials[i] = wood
+    T.log("   材質を木目へ差し替えた")
+
+
 def shoot(shot):
     open_blend(shot["blend"])
+    apply_render_materials(shot["name"])
     center, _size, span = scene_bounds()
 
     studio_lights(center, span)
