@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { constants, profile as profileLogic, rules } from './game-core.js';
+import { presenceStale, roomView, shouldAutoStart, startBlockedReason } from './room-view.js';
 import { isSettled, rewardsForMatch } from './rewards.ts';
 import { socialRoute, type SocialStore } from './social.ts';
 import { storyRoute, storyView, type CommitInput, type StoryStore } from './story.ts';
@@ -72,7 +73,9 @@ async function viewOf(db: any, userId: string, knownProfile?: any) {
   const story = await storyView(createStoryStore(db), userId);
   return {
     profile: loaded.profile,
-    room: room ? publicRoom(room) : null,
+    // 生のルームをそのまま返さない。画面は userId / isYou / connected /
+    // youAreHost を見る（room-view.js の説明を読むこと）。
+    room: roomView(room, userId),
     match: match ? matchView(match, userId) : null,
     queue: null,
     ...story,
@@ -177,11 +180,71 @@ function matchView(match: any, userId: string) {
   };
 }
 
-function publicRoom(room: any) {
-  const copy = clone(room);
-  delete copy.memberIds;
-  delete copy._revision;
-  return copy;
+/**
+ * ルームの席を1つ増やす。
+ *
+ * joinedAt と lastSeenAt をここで必ず押す。どちらか欠けると、
+ * 画面側は「切断中」と出し、待ち時間も測れない。
+ */
+function newMember(userId: string, name: string, charId: string, ready: boolean) {
+  const now = Date.now();
+  return { playerId: userId, name, charId, ready, joinedAt: now, lastSeenAt: now };
+}
+
+/**
+ * 「まだ居る」を更新する。毎回の poll で書くと revision が上がり続けるので、
+ * 猶予（180秒）の1/3より古いときだけ書く。書けなくても view は返す。
+ */
+async function touchPresence(db: any, room: any, userId: string) {
+  if (!room) return room;
+  const me = (room.members || []).find((m: any) => m.playerId === userId);
+  if (!me || !presenceStale(me)) return room;
+  me.lastSeenAt = Date.now();
+  try { await saveRoom(db, room); } catch { /* 在席の記録に失敗しても進行は止めない */ }
+  return room;
+}
+
+/**
+ * ルームから対戦を起こす。参加順がそのまま席順（P1・P2・P3）。
+ *
+ * ホストが押す場合（/room/start）と、公開ルームが3人そろって自動で始まる場合の
+ * 両方から呼ぶ。片方にだけ書くと、必ずもう片方が抜ける。
+ */
+async function startRoomMatch(db: any, room: any) {
+  const matchId = `m_${randomHex(8).toLowerCase()}`;
+  const seats = room.members.map((m: any, i: number) => ({
+    seat: i + 1, name: m.name, charId: m.charId, kind: 'human', userId: m.playerId,
+  }));
+  const state = rules.createMatch({ matchId, mode: 'online', seats, startSeat: rules.pickStartSeat() });
+  const match = { matchId, roomCode: room.code, seatSnapshot: seats, state, status: 'playing', rewards: null, createdAt: Date.now() };
+  const { error } = await db.from('triad_matches').insert({ match_id: matchId, room_code: room.code, data: match, revision: 0 });
+  if (error) throw error;
+  room.matchId = matchId;
+  room.status = 'playing';
+  await saveRoom(db, room);
+  await setActiveMatch(db, seats.map((s: any) => s.userId), matchId);
+  return matchId;
+}
+
+/**
+ * 公開ルーム（世界対戦）が3人そろったら、誰の要求で気づいたかに関わらず始める。
+ *
+ * 画面は「3人そろうと自動で始まります」と言い、/world/join は参加時点で
+ * ready を立てている。それなのに始める側がどこにも無かったので、公開ルームは
+ * 3人そろっても永久に待機画面のままだった。
+ *
+ * 3人目の参加応答と、他の2人のポーリングの、どれが先に気づいても始まるように、
+ * 取得の経路からも呼ぶ。二重に起こさないよう matchId の有無で弾く。
+ */
+async function maybeAutoStart(db: any, room: any) {
+  if (!shouldAutoStart(room)) return room;
+  try {
+    await startRoomMatch(db, room);
+  } catch {
+    // 同時に2人が気づくと片方の insert が落ちる。落ちた側は次の取得で
+    // 相手が作った対戦を読むだけでよいので、ここでは何もしない。
+  }
+  return room;
 }
 
 async function commitProfile(db: any, userId: string, revision: number, draft: any, requestId: string, hash: string, response: any) {
@@ -399,7 +462,7 @@ function createSocialStore(db: any): SocialStore {
     async roomOf(userId) { return findRoom(db, userId); },
     async addRoomMember(room, userId, charId) {
       const { data } = await db.from('profiles').select('display_name').eq('id', userId).maybeSingle();
-      room.members.push({ playerId: userId, name: data?.display_name || '旅人', charId, ready: false });
+      room.members.push(newMember(userId, data?.display_name || '旅人', charId, false));
       await saveRoom(db, room);
     },
     async createInvite(senderId, receiverId, roomCode, expiresAt) {
@@ -473,9 +536,15 @@ async function route(ctx: any, path: string, body: any) {
   }
 
   if (path === '/me' || path === '/world/poll') {
+    const mine = await findRoom(ctx.db, userId);
+    // 取りに来ている＝その人は居る。他の2人はこれを見て接続中と判断する。
+    await touchPresence(ctx.db, mine, userId);
+    // 公開ルームが3人そろっていたら、ここで始める。3人目の参加応答より
+    // 先に他の2人のポーリングが気づくこともあるので、両方から呼ぶ。
+    await maybeAutoStart(ctx.db, mine);
     // 決着の手を打てなかった人（負け・引き分け・回線が切れていた人）も、
     // 次の定期取得で自分の報酬を受け取れるようにする。
-    const pending = await findMatch(ctx.db, await findRoom(ctx.db, userId));
+    const pending = await findMatch(ctx.db, mine);
     if (pending && Array.isArray(pending.rewards)) await settleMatchRewards(ctx.db, pending, userId);
     return success(await viewOf(ctx.db, userId));
   }
@@ -531,8 +600,10 @@ async function route(ctx: any, path: string, body: any) {
       const { data: candidates } = await ctx.db.from('triad_rooms').select('data,revision').contains('data', { visibility: 'public', status: 'lobby' }).limit(20);
       const candidate = (candidates || []).map((x: any) => ({ ...x.data, _revision: Number(x.revision) })).find((x: any) => x.members.length < 3);
       if (candidate) {
-        candidate.members.push({ playerId: userId, name: p.name, charId: body.charId, ready: true });
+        candidate.members.push(newMember(userId, p.name, body.charId, true));
         await saveRoom(ctx.db, candidate);
+        // これで3人目なら、この応答で対戦が始まっている。
+        await maybeAutoStart(ctx.db, candidate);
         return success(await viewOf(ctx.db, userId), { result: { code: candidate.code, queued: candidate.members.length < 3 } });
       }
     }
@@ -540,7 +611,7 @@ async function route(ctx: any, path: string, body: any) {
       const code = randomHex(3);
       const isWorld = path === '/world/join';
       const room = { code, hostId: userId, visibility: isWorld ? 'public' : (body.visibility || 'private'), status: 'lobby', matchId: null,
-        createdAt: Date.now(), members: [{ playerId: userId, name: p.name, charId: body.charId, ready: isWorld }] };
+        createdAt: Date.now(), members: [newMember(userId, p.name, body.charId, isWorld)] };
       try { await saveRoom(ctx.db, room); return success(await viewOf(ctx.db, userId), { result: { code } }); } catch { /* code collision */ }
     }
     return fail('no_code', 'ルームを作成できませんでした。');
@@ -555,7 +626,7 @@ async function route(ctx: any, path: string, body: any) {
     const room = { ...data.data, _revision: Number(data.revision) };
     if (room.status !== 'lobby' || room.members.length >= 3) return fail('full', 'そのルームには参加できません。');
     const p = (await loadProfile(ctx.db, userId)).profile;
-    if (!room.members.some((m: any) => m.playerId === userId)) room.members.push({ playerId: userId, name: p.name, charId: body.charId, ready: false });
+    if (!room.members.some((m: any) => m.playerId === userId)) room.members.push(newMember(userId, p.name, body.charId, false));
     await saveRoom(ctx.db, room);
     return success(await viewOf(ctx.db, userId), { result: { code } });
   }
@@ -581,16 +652,10 @@ async function route(ctx: any, path: string, body: any) {
     return success(await viewOf(ctx.db, userId));
   }
   if (path === '/room/start') {
-    if (room.hostId !== userId) return fail('not_host', '開始できるのはホストだけです。');
-    if (room.members.length !== 3 || !room.members.every((m: any) => m.ready)) return fail('not_ready', '3人全員の準備が必要です。');
-    const matchId = `m_${randomHex(8).toLowerCase()}`;
-    const seats = room.members.map((m: any, i: number) => ({ seat: i + 1, name: m.name, charId: m.charId, kind: 'human', userId: m.playerId }));
-    const state = rules.createMatch({ matchId, mode: 'online', seats, startSeat: rules.pickStartSeat() });
-    const match = { matchId, roomCode: room.code, seatSnapshot: seats, state, status: 'playing', rewards: null, createdAt: Date.now() };
-    const { error } = await ctx.db.from('triad_matches').insert({ match_id: matchId, room_code: room.code, data: match, revision: 0 });
-    if (error) throw error;
-    room.matchId = matchId; room.status = 'playing'; await saveRoom(ctx.db, room);
-    await setActiveMatch(ctx.db, seats.map((s: any) => s.userId), matchId);
+    // 画面の開始ボタンと同じ条件をここでも持つ（room-view.js）。
+    const blocked = startBlockedReason(room, userId);
+    if (blocked) return fail(blocked.code, blocked.message);
+    const matchId = await startRoomMatch(ctx.db, room);
     return success(await viewOf(ctx.db, userId), { result: { matchId } });
   }
   if (path === '/match/action') {

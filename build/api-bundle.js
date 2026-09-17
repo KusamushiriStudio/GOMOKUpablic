@@ -297,13 +297,13 @@ __def("../../shared/constants.js", function(__req2) {
   );
   const ROOM_CODE_LENGTH = 6;
   const ROOM_CODE_ALPHABET = "0123456789ABCDEF";
-  const ROOM_CAPACITY = 3;
-  const DISCONNECT_GRACE_MS = 18e4;
+  const ROOM_CAPACITY2 = 3;
+  const DISCONNECT_GRACE_MS2 = 18e4;
   const DISCONNECT_WATCH_INTERVAL_MS = 15e3;
   const SSE_HEARTBEAT_MS = 2e4;
   const FX_DURATION_MS = 1100;
   const DEFAULT_AUDIO = Object.freeze({ bgm: 0.24, sfx: 0.4, ambient: 0.3, muted: false });
-  const EFFECT_LEVELS = Object.freeze(["off", "low", "normal"]);
+  const EFFECT_LEVELS = Object.freeze(["off", "low", "normal", "high"]);
   const DEFAULT_EFFECT_LEVEL = "normal";
   const STORAGE_EFFECT_KEY = "triad.effects.v1";
   const BPM_HOME = 84;
@@ -330,7 +330,7 @@ __def("../../shared/constants.js", function(__req2) {
     const { col, row } = indexToCoord(index);
     return `${COLUMN_LABELS[col]}${row + 1}`;
   }
-  return { BOARD_W, BOARD_H, BOARD_SIZE, CENTER_INDEX, WIN_LENGTH, COLUMN_LABELS, LEGACY_BOARD_W, LEGACY_BOARD_H, SEATS, SEAT_COLORS, MAX_ENERGY, NEIGHBOR_DIRS, LINE_DIRS, RARITIES, RARITY_WEIGHTS, RARITY_WEIGHT_TOTAL, RARITY_LABEL, CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, SKILL_BY_ID, SKILL_BY_CHARACTER, COSMETIC_SLOTS, DEFAULT_EQUIP, COSMETICS, COSMETIC_BY_ID, SLOT_LABEL, CHARACTER_DRAW_PREFIX, characterDrawId, parseDrawId, GACHA_POOL, GACHA_POOL_BY_RARITY, GACHA_POOL_BY_ID, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, MISSIONS, MISSION_BY_ID, ROOM_CODE_LENGTH, ROOM_CODE_ALPHABET, ROOM_CAPACITY, DISCONNECT_GRACE_MS, DISCONNECT_WATCH_INTERVAL_MS, SSE_HEARTBEAT_MS, FX_DURATION_MS, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, STORAGE_EFFECT_KEY, BPM_HOME, BPM_MATCH, STORAGE_KEY, STORAGE_AUDIO_KEY, STORAGE_UI_KEY, STORAGE_LOCK_KEY, LEGACY_STORAGE_KEYS, SAVE_VERSION, SAVE_VERSION_PREV, SAVE_VERSIONS_MIGRATABLE, GACHA_HISTORY_LIMIT, indexToCoord, coordToIndex, inBoard, indexToLabel };
+  return { BOARD_W, BOARD_H, BOARD_SIZE, CENTER_INDEX, WIN_LENGTH, COLUMN_LABELS, LEGACY_BOARD_W, LEGACY_BOARD_H, SEATS, SEAT_COLORS, MAX_ENERGY, NEIGHBOR_DIRS, LINE_DIRS, RARITIES, RARITY_WEIGHTS, RARITY_WEIGHT_TOTAL, RARITY_LABEL, CHARACTERS, CHARACTER_BY_ID, STARTER_CHARACTER_IDS, SKILL_BY_ID, SKILL_BY_CHARACTER, COSMETIC_SLOTS, DEFAULT_EQUIP, COSMETICS, COSMETIC_BY_ID, SLOT_LABEL, CHARACTER_DRAW_PREFIX, characterDrawId, parseDrawId, GACHA_POOL, GACHA_POOL_BY_RARITY, GACHA_POOL_BY_ID, GACHA_COST_SINGLE, GACHA_COST_MULTI, GACHA_PULL_COUNT_MULTI, REWARD_PERICA, REWARD_PLAYER_XP, REWARD_CHAR_XP, PLAYER_XP_PER_LEVEL, CHAR_XP_PER_LEVEL, TRAIN_COST_PERICA, TRAIN_CHAR_XP, DUP_CHAR_XP, DUP_PLAYER_XP, MISSIONS, MISSION_BY_ID, ROOM_CODE_LENGTH, ROOM_CODE_ALPHABET, ROOM_CAPACITY: ROOM_CAPACITY2, DISCONNECT_GRACE_MS: DISCONNECT_GRACE_MS2, DISCONNECT_WATCH_INTERVAL_MS, SSE_HEARTBEAT_MS, FX_DURATION_MS, DEFAULT_AUDIO, EFFECT_LEVELS, DEFAULT_EFFECT_LEVEL, STORAGE_EFFECT_KEY, BPM_HOME, BPM_MATCH, STORAGE_KEY, STORAGE_AUDIO_KEY, STORAGE_UI_KEY, STORAGE_LOCK_KEY, LEGACY_STORAGE_KEYS, SAVE_VERSION, SAVE_VERSION_PREV, SAVE_VERSIONS_MIGRATABLE, GACHA_HISTORY_LIMIT, indexToCoord, coordToIndex, inBoard, indexToLabel };
 });
 __def("../../shared/gacha.js", function(__req2) {
   const { RARITIES, RARITY_WEIGHTS, RARITY_WEIGHT_TOTAL, GACHA_POOL, GACHA_POOL_BY_RARITY } = __req2("../../shared/constants.js");
@@ -4077,6 +4077,53 @@ var rules = __req("../../shared/rules.js");
 var storyEngine = __req("../../shared/story/engine.js");
 var stages = __req("../../shared/story/stages.js");
 
+// supabase/functions/api/room-view.js
+var { ROOM_CAPACITY, DISCONNECT_GRACE_MS } = constants;
+function isConnected(member, room, userId, now = Date.now()) {
+  if (member.playerId === userId) return true;
+  const seen = Number(member.lastSeenAt ?? (room == null ? void 0 : room.updatedAt) ?? 0);
+  if (!seen) return true;
+  return now - seen < DISCONNECT_GRACE_MS;
+}
+function presenceStale(member, now = Date.now()) {
+  return now - Number((member == null ? void 0 : member.lastSeenAt) ?? 0) >= DISCONNECT_GRACE_MS / 3;
+}
+function roomView(room, userId, now = Date.now()) {
+  if (!room) return null;
+  return {
+    code: room.code,
+    hostId: room.hostId,
+    visibility: room.visibility,
+    status: room.status,
+    matchId: room.matchId || null,
+    createdAt: room.createdAt,
+    capacity: ROOM_CAPACITY,
+    youAreHost: room.hostId === userId,
+    members: (room.members || []).map((m) => ({
+      userId: m.playerId,
+      name: m.name,
+      charId: m.charId,
+      ready: !!m.ready,
+      isYou: m.playerId === userId,
+      connected: isConnected(m, room, userId, now),
+      joinedAt: m.joinedAt ?? room.createdAt ?? null
+    }))
+  };
+}
+function shouldAutoStart(room) {
+  return !!room && room.visibility === "public" && room.status === "lobby" && !room.matchId && (room.members || []).length === ROOM_CAPACITY && room.members.every((m) => m.ready);
+}
+function startBlockedReason(room, userId, now = Date.now()) {
+  if (!room) return { code: "no_room", message: "\u30EB\u30FC\u30E0\u306B\u53C2\u52A0\u3057\u3066\u3044\u307E\u305B\u3093\u3002" };
+  if (room.hostId !== userId) return { code: "not_host", message: "\u958B\u59CB\u3067\u304D\u308B\u306E\u306F\u30DB\u30B9\u30C8\u3060\u3051\u3067\u3059\u3002" };
+  if (room.status !== "lobby") return { code: "in_progress", message: "\u3059\u3067\u306B\u5BFE\u6226\u4E2D\u3067\u3059\u3002" };
+  if ((room.members || []).length !== ROOM_CAPACITY) return { code: "not_full", message: "3\u4EBA\u305D\u308D\u3063\u3066\u3044\u307E\u305B\u3093\u3002" };
+  if (!room.members.every((m) => m.ready)) return { code: "not_ready", message: "\u5168\u54E1\u306E\u6E96\u5099\u304C\u5B8C\u4E86\u3057\u3066\u3044\u307E\u305B\u3093\u3002" };
+  const offline = room.members.filter((m) => !isConnected(m, room, userId, now));
+  if (offline.length) return { code: "not_connected", message: "\u63A5\u7D9A\u304C\u5207\u308C\u3066\u3044\u308B\u30D7\u30EC\u30A4\u30E4\u30FC\u304C\u3044\u307E\u3059\u3002" };
+  return null;
+}
+
 // supabase/functions/api/rewards.ts
 function isSettled(match) {
   return (match == null ? void 0 : match.status) === "finished" || (match == null ? void 0 : match.status) === "aborted";
@@ -4697,7 +4744,9 @@ async function viewOf(db, userId, knownProfile) {
   const story = await storyView(createStoryStore(db), userId);
   return {
     profile: loaded.profile,
-    room: room ? publicRoom(room) : null,
+    // 生のルームをそのまま返さない。画面は userId / isYou / connected /
+    // youAreHost を見る（room-view.js の説明を読むこと）。
+    room: roomView(room, userId),
     match: match ? matchView(match, userId) : null,
     queue: null,
     ...story,
@@ -4777,11 +4826,47 @@ function matchView(match, userId) {
     disconnect: match.disconnect || []
   };
 }
-function publicRoom(room) {
-  const copy = clone2(room);
-  delete copy.memberIds;
-  delete copy._revision;
-  return copy;
+function newMember(userId, name, charId, ready) {
+  const now = Date.now();
+  return { playerId: userId, name, charId, ready, joinedAt: now, lastSeenAt: now };
+}
+async function touchPresence(db, room, userId) {
+  if (!room) return room;
+  const me = (room.members || []).find((m) => m.playerId === userId);
+  if (!me || !presenceStale(me)) return room;
+  me.lastSeenAt = Date.now();
+  try {
+    await saveRoom(db, room);
+  } catch {
+  }
+  return room;
+}
+async function startRoomMatch(db, room) {
+  const matchId = `m_${randomHex(8).toLowerCase()}`;
+  const seats = room.members.map((m, i) => ({
+    seat: i + 1,
+    name: m.name,
+    charId: m.charId,
+    kind: "human",
+    userId: m.playerId
+  }));
+  const state = rules.createMatch({ matchId, mode: "online", seats, startSeat: rules.pickStartSeat() });
+  const match = { matchId, roomCode: room.code, seatSnapshot: seats, state, status: "playing", rewards: null, createdAt: Date.now() };
+  const { error } = await db.from("triad_matches").insert({ match_id: matchId, room_code: room.code, data: match, revision: 0 });
+  if (error) throw error;
+  room.matchId = matchId;
+  room.status = "playing";
+  await saveRoom(db, room);
+  await setActiveMatch(db, seats.map((s) => s.userId), matchId);
+  return matchId;
+}
+async function maybeAutoStart(db, room) {
+  if (!shouldAutoStart(room)) return room;
+  try {
+    await startRoomMatch(db, room);
+  } catch {
+  }
+  return room;
 }
 async function commitProfile(db, userId, revision, draft, requestId, hash, response) {
   const { data, error } = await db.rpc("triad_commit_profile", {
@@ -4970,7 +5055,7 @@ function createSocialStore(db) {
     },
     async addRoomMember(room, userId, charId) {
       const { data } = await db.from("profiles").select("display_name").eq("id", userId).maybeSingle();
-      room.members.push({ playerId: userId, name: (data == null ? void 0 : data.display_name) || "\u65C5\u4EBA", charId, ready: false });
+      room.members.push(newMember(userId, (data == null ? void 0 : data.display_name) || "\u65C5\u4EBA", charId, false));
       await saveRoom(db, room);
     },
     async createInvite(senderId, receiverId, roomCode, expiresAt) {
@@ -5042,7 +5127,10 @@ async function route(ctx, path, body) {
     return success(view, story.result === void 0 ? {} : { result: story.result });
   }
   if (path === "/me" || path === "/world/poll") {
-    const pending = await findMatch(ctx.db, await findRoom(ctx.db, userId));
+    const mine = await findRoom(ctx.db, userId);
+    await touchPresence(ctx.db, mine, userId);
+    await maybeAutoStart(ctx.db, mine);
+    const pending = await findMatch(ctx.db, mine);
     if (pending && Array.isArray(pending.rewards)) await settleMatchRewards(ctx.db, pending, userId);
     return success(await viewOf(ctx.db, userId));
   }
@@ -5093,8 +5181,9 @@ async function route(ctx, path, body) {
       const { data: candidates } = await ctx.db.from("triad_rooms").select("data,revision").contains("data", { visibility: "public", status: "lobby" }).limit(20);
       const candidate = (candidates || []).map((x) => ({ ...x.data, _revision: Number(x.revision) })).find((x) => x.members.length < 3);
       if (candidate) {
-        candidate.members.push({ playerId: userId, name: p.name, charId: body.charId, ready: true });
+        candidate.members.push(newMember(userId, p.name, body.charId, true));
         await saveRoom(ctx.db, candidate);
+        await maybeAutoStart(ctx.db, candidate);
         return success(await viewOf(ctx.db, userId), { result: { code: candidate.code, queued: candidate.members.length < 3 } });
       }
     }
@@ -5108,7 +5197,7 @@ async function route(ctx, path, body) {
         status: "lobby",
         matchId: null,
         createdAt: Date.now(),
-        members: [{ playerId: userId, name: p.name, charId: body.charId, ready: isWorld }]
+        members: [newMember(userId, p.name, body.charId, isWorld)]
       };
       try {
         await saveRoom(ctx.db, room2);
@@ -5127,7 +5216,7 @@ async function route(ctx, path, body) {
     const room2 = { ...data.data, _revision: Number(data.revision) };
     if (room2.status !== "lobby" || room2.members.length >= 3) return fail3("full", "\u305D\u306E\u30EB\u30FC\u30E0\u306B\u306F\u53C2\u52A0\u3067\u304D\u307E\u305B\u3093\u3002");
     const p = (await loadProfile(ctx.db, userId)).profile;
-    if (!room2.members.some((m) => m.playerId === userId)) room2.members.push({ playerId: userId, name: p.name, charId: body.charId, ready: false });
+    if (!room2.members.some((m) => m.playerId === userId)) room2.members.push(newMember(userId, p.name, body.charId, false));
     await saveRoom(ctx.db, room2);
     return success(await viewOf(ctx.db, userId), { result: { code } });
   }
@@ -5158,18 +5247,9 @@ async function route(ctx, path, body) {
     return success(await viewOf(ctx.db, userId));
   }
   if (path === "/room/start") {
-    if (room.hostId !== userId) return fail3("not_host", "\u958B\u59CB\u3067\u304D\u308B\u306E\u306F\u30DB\u30B9\u30C8\u3060\u3051\u3067\u3059\u3002");
-    if (room.members.length !== 3 || !room.members.every((m) => m.ready)) return fail3("not_ready", "3\u4EBA\u5168\u54E1\u306E\u6E96\u5099\u304C\u5FC5\u8981\u3067\u3059\u3002");
-    const matchId = `m_${randomHex(8).toLowerCase()}`;
-    const seats = room.members.map((m, i) => ({ seat: i + 1, name: m.name, charId: m.charId, kind: "human", userId: m.playerId }));
-    const state = rules.createMatch({ matchId, mode: "online", seats, startSeat: rules.pickStartSeat() });
-    const match = { matchId, roomCode: room.code, seatSnapshot: seats, state, status: "playing", rewards: null, createdAt: Date.now() };
-    const { error } = await ctx.db.from("triad_matches").insert({ match_id: matchId, room_code: room.code, data: match, revision: 0 });
-    if (error) throw error;
-    room.matchId = matchId;
-    room.status = "playing";
-    await saveRoom(ctx.db, room);
-    await setActiveMatch(ctx.db, seats.map((s) => s.userId), matchId);
+    const blocked = startBlockedReason(room, userId);
+    if (blocked) return fail3(blocked.code, blocked.message);
+    const matchId = await startRoomMatch(ctx.db, room);
     return success(await viewOf(ctx.db, userId), { result: { matchId } });
   }
   if (path === "/match/action") {
