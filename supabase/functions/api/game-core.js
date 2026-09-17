@@ -4414,9 +4414,18 @@ const RULESET = Object.freeze({
 /**
  * V99 の全スキル解放・強化設定。
  * 2026-09-14：手番回数による解放制限を撤廃し、強化形を初手から利用可能にした。
- * 防御系の結界・氷結は攻撃系より追加配置を1つ多くして相対的な防御力を維持する。
  *
- * ここに書いてあるのは「消費」「回数の下限」「追加配置の数」だけで、
+ * 2026-09-18：追加配置（extra）を全キャラ 0 にした。
+ *   1手番でできることは「石を1個置く」か「スキルを1回使う」のどちらか一方で、
+ *   スキルのあとに石を置くことはできない。あそびかたの説明文は最初から
+ *   そう書いてあったのに、ここだけが 2〜3 個の追加配置を与えていて、
+ *   説明と実際の動きが食い違っていた。
+ *
+ *   仕組み（state.pending と doExtra）は残してある。消すと、いま進行中で
+ *   追加配置が残っている対戦が最後まで進めなくなるため。新しい対戦では
+ *   extra が 0 なので pending は作られない。
+ *
+ * ここに書いてあるのは「消費」「回数の下限」だけで、
  * 五目を強制的に完成させる処理・自動補完・強制決着は一切含まない。
  */
 const V99 = Object.freeze({
@@ -4430,17 +4439,23 @@ const V99 = Object.freeze({
   longRecover: Object.freeze(['hayate', 'kuon', 'akari']),
   /** 全スキルを最初から利用可能にする。 */
   lockedSkills: Object.freeze([]),
-  /** 初期状態の消費・回数の下限・追加配置の数（キャラ別） */
+  /**
+   * 初期状態の消費・回数の下限・追加配置の数（キャラ別）。
+   * extra は全キャラ 0。スキルを使ったらその時点で手番が終わる。
+   */
   enhance: Object.freeze({
-    hibana: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
-    mamori: Object.freeze({ cost: 1, usesFloor: 12, extra: 3 }),
-    hayate: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
-    yukine: Object.freeze({ cost: 1, usesFloor: 12, extra: 3 }),
-    kuon: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
-    akari: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
+    hibana: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+    mamori: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+    hayate: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+    yukine: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+    kuon: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+    akari: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
   }),
-  /** 行動順ごとの追加配置の減算（実際の1番手・2番手・3番手） */
-  orderPenalty: Object.freeze([1, 1, 0]),
+  /**
+   * 行動順ごとの追加配置の減算（実際の1番手・2番手・3番手）。
+   * 追加配置が 0 になったので、ここも差を付ける意味が無い。
+   */
+  orderPenalty: Object.freeze([0, 0, 0]),
   /**
    * 火花で消した交点にも追加配置できるようにするか。
    *

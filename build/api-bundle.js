@@ -3952,17 +3952,23 @@ __def("../../shared/rulesets.js", function(__req2) {
     longRecover: Object.freeze(["hayate", "kuon", "akari"]),
     /** 全スキルを最初から利用可能にする。 */
     lockedSkills: Object.freeze([]),
-    /** 初期状態の消費・回数の下限・追加配置の数（キャラ別） */
+    /**
+     * 初期状態の消費・回数の下限・追加配置の数（キャラ別）。
+     * extra は全キャラ 0。スキルを使ったらその時点で手番が終わる。
+     */
     enhance: Object.freeze({
-      hibana: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
-      mamori: Object.freeze({ cost: 1, usesFloor: 12, extra: 3 }),
-      hayate: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
-      yukine: Object.freeze({ cost: 1, usesFloor: 12, extra: 3 }),
-      kuon: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 }),
-      akari: Object.freeze({ cost: 1, usesFloor: 12, extra: 2 })
+      hibana: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+      mamori: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+      hayate: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+      yukine: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+      kuon: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 }),
+      akari: Object.freeze({ cost: 1, usesFloor: 12, extra: 0 })
     }),
-    /** 行動順ごとの追加配置の減算（実際の1番手・2番手・3番手） */
-    orderPenalty: Object.freeze([1, 1, 0]),
+    /**
+     * 行動順ごとの追加配置の減算（実際の1番手・2番手・3番手）。
+     * 追加配置が 0 になったので、ここも差を付ける意味が無い。
+     */
+    orderPenalty: Object.freeze([0, 0, 0]),
     /**
      * 火花で消した交点にも追加配置できるようにするか。
      *

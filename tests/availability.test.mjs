@@ -69,14 +69,14 @@ test('更新前から継続中の対戦も使用枠12へ安全に移行する', 
   assert.equal(usesCapOf(state, 1, 'spark'), 12);
 });
 
-test('防御系の結界・氷結は攻撃系より追加配置を1つ多く持つ', () => {
-  const extra = Object.fromEntries(CHARACTERS.map((char) => [
-    char.skill.id,
-    v99FormOf(matchFor(char.id), 1, char.skill.id).extra,
-  ]));
-  const attackMax = Math.max(extra.spark, extra.windwalk, extra.pull, extra.transmute);
-  assert.ok(extra.ward > attackMax);
-  assert.ok(extra.freeze > attackMax);
+test('どの技も追加配置を持たない（1手番は「置く」か「使う」のどちらか一方）', () => {
+  // 2026-09-18 に変更。以前は防御系が攻撃系より 1 つ多い追加配置を持っていたが、
+  // あそびかたの説明文は最初から「スキルの後に石を追加で置くことはできません」と
+  // 書いてあり、V99 の設定だけが食い違っていた。
+  for (const char of CHARACTERS) {
+    const form = v99FormOf(matchFor(char.id), 1, char.skill.id);
+    assert.equal(form.extra, 0, `${char.name}の${char.skill.name}に追加配置が残っている`);
+  }
 });
 
 test('初手エナジー1で攻撃系・防御系の全スキルを実際に発動できる', () => {
@@ -96,6 +96,8 @@ test('初手エナジー1で攻撃系・防御系の全スキルを実際に発�
     const result = applyAction(state, sample.action);
     assert.equal(result.ok, true, `${char.name}が初手で${char.skill.name}を発動`);
     assert.equal(result.state.energy[1], 0);
-    assert.ok(result.state.pending?.remaining > 0, `${char.name}の追加配置が発生`);
+    // 発動したらそこで手番が終わる。追加配置は残さない。
+    assert.equal(result.state.pending, null, `${char.name}の追加配置が残っている`);
+    assert.notEqual(result.state.turn, 1, `${char.name}の手番が終わっていない`);
   }
 });
