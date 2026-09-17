@@ -2225,9 +2225,37 @@ const ctx = {
 
 /* ───────────────────────── 描画 ───────────────────────── */
 
+/**
+ * 入力中かどうか。
+ *
+ * 画面は 8 秒ごとの取得（POLL_IDLE）のたびに render() を呼び、
+ * render() は clear(root) で中身を丸ごと捨てて作り直す。そのため、
+ * 名前を打っている最中に取得が走ると、入力欄が別の要素に差し替わり、
+ * 打ちかけの文字が保存済みの値へ戻り、フォーカスも外れていた。
+ * 日本語をIMEで打つ人ほど確実に巻き込まれ、
+ * 「名前を変更できる人とできない人がいる」として報告された。
+ *
+ * 盤面には文字の入力欄が無いので、対局中の更新はこの条件に掛からない。
+ */
+function isTyping(root) {
+  const el = document.activeElement;
+  if (!el || !root.contains(el)) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA') return true;
+  if (tag !== 'INPUT') return false;
+  // ボタンや選択肢は差し替わっても困らない。文字を打つ欄だけを守る。
+  return ['text', 'search', 'email', 'password', 'tel', 'url', 'number', ''].includes(el.type);
+}
+
+/** 入力中に取得が走ったときは、作り直しを入力が終わるまで待たせる。 */
+let renderDeferred = false;
+
 function render() {
   const root = document.getElementById('view-root');
   if (!root) return;
+  if (isTyping(root)) { renderDeferred = true; return; }
+  renderDeferred = false;
   clear(root);
   root.classList.remove('has-actionbar');
 
@@ -2505,6 +2533,17 @@ function boot() {
   // 通信が戻ったら、待っている人を自動でつなぎ直す（§26）。
   window.addEventListener('online', () => { if (!app.onlineKind) retryConnect(); });
   window.addEventListener('offline', () => render());
+
+  // 入力中に見送った作り直しを、入力欄から離れた時点で流す。
+  // これが無いと、打ち終わったあとの画面が古いまま止まる。
+  document.addEventListener('focusout', () => {
+    if (!renderDeferred) return;
+    // 次の入力欄へ移っただけの場合は、まだ待つ（focusout は focusin より先に来る）。
+    setTimeout(() => {
+      const root = document.getElementById('view-root');
+      if (renderDeferred && root && !isTyping(root)) render();
+    }, 0);
+  });
 
   render();
   detectOnlineBackend();
@@ -14200,7 +14239,10 @@ function renderSettings(root, ctx) {
     el('button', {
       class: 'btn small', type: 'button', text: '保存',
       onclick: async () => {
-        const v = String(nameInput.value || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 16);
+        // 切り詰めは「文字」で行う。slice(0, 16) は UTF-16 の単位で切るので、
+        // 絵文字のように2単位で1文字のものを割り、保存時に � へ化ける。
+        const cleaned = String(nameInput.value || '').replace(/[<>&"'`\\]/g, '').trim();
+        const v = [...cleaned].slice(0, 16).join('');
         if (!v) { toast('名前を入力してください。', 'error'); return; }
         const r = await ctx.api.setName(v);
         if (r.ok) toast('名前を保存しました。');

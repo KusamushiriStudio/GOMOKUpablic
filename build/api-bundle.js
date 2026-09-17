@@ -4091,11 +4091,11 @@ function invisible(cp) {
 }
 function sanitizeName(value) {
   const raw = String(value ?? "").replace(/[<>&"'`\\]/g, "");
-  let out = "";
+  const kept = [];
   for (const ch of raw) {
-    if (!invisible(ch.codePointAt(0))) out += ch;
+    if (!invisible(ch.codePointAt(0))) kept.push(ch);
   }
-  return out.trim().slice(0, NAME_MAX);
+  return [...kept.join("").trim()].slice(0, NAME_MAX).join("");
 }
 function displayNameOf(value) {
   return sanitizeName(value) || NAME_FALLBACK;

@@ -58,11 +58,14 @@ function invisible(cp) {
  */
 export function sanitizeName(value) {
   const raw = String(value ?? '').replace(/[<>&"'`\\]/g, '');
-  let out = '';
+  const kept = [];
   for (const ch of raw) {
-    if (!invisible(ch.codePointAt(0))) out += ch;
+    if (!invisible(ch.codePointAt(0))) kept.push(ch);
   }
-  return out.trim().slice(0, NAME_MAX);
+  // 切り詰めは「文字」で行う。UTF-16 の単位（slice）で切ると、絵文字のように
+  // 2単位で1文字のものを割ってしまい、片割れだけが残る。片割れは UTF-8 に
+  // できないので、保存された名前が U+FFFD（�）に化ける。
+  return [...kept.join('').trim()].slice(0, NAME_MAX).join('');
 }
 
 /** 交友側に出す名札。空なら既定へ落とす。 */
