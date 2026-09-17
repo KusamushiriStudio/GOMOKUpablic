@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { constants, profile as profileLogic, rules } from './game-core.js';
+import { displayNameOf, needsNameSync, sanitizeName } from './identity.js';
 import { presenceStale, roomView, shouldAutoStart, startBlockedReason } from './room-view.js';
 import { isSettled, rewardsForMatch } from './rewards.ts';
 import { socialRoute, type SocialStore } from './social.ts';
@@ -16,7 +17,8 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const fail = (code: string, message: string, view?: unknown, status = 400) => json({ ok: false, code, message, view }, status);
 const success = (view: unknown, extra: Record<string, unknown> = {}) => json({ ok: true, view, ...extra });
 const clone = <T>(value: T): T => structuredClone(value);
-const cleanName = (value: unknown) => String(value ?? '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 16);
+// 名札の決まりは identity.js に1つだけ置く。2か所に書くと必ずずれる。
+const cleanName = (value: unknown) => sanitizeName(value);
 const requestHash = (path: string, body: unknown) => profileLogic.bodyHash({ path, body });
 const randomHex = (bytes: number) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 
@@ -321,13 +323,44 @@ async function ensureIdentity(db: any, userId: string) {
   }
   // 名札が要るのは初回だけ。ここでだけ資産側から表示名を借りる。
   const { profile } = await loadProfile(db, userId);
-  const display_name = String(profile?.name || '旅人').slice(0, 16);
+  const display_name = displayNameOf(profile?.name);
   // 重複したら引き直す。桁数から見て数回で必ず空きが見つかる。
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { error } = await db.from('profiles')
       .upsert({ id: userId, display_name, player_code: newPlayerCode(), last_online_at: now });
     if (!error) return;
   }
+}
+
+/**
+ * 交友側の名札を資産側の名前に合わせる。
+ *
+ * フレンド一覧・検索・ルームの席は profiles.display_name しか見ない。
+ * /name がここを書いていなかったため、本番では資産側が「テスト太郎」、
+ * 交友側が「あなた」のまま、という食い違いが実際に残っていた。
+ *
+ * 同じなら書かない。取得のたびに更新を投げないため。
+ */
+async function syncDisplayName(db: any, userId: string, name: string) {
+  const { data } = await db.from('profiles').select('display_name').eq('id', userId).maybeSingle();
+  if (!data || !needsNameSync(data.display_name, name)) return;
+  await db.from('profiles').update({ display_name: displayNameOf(name) }).eq('id', userId);
+}
+
+/**
+ * いま入っている待合室の席にも、新しい名前を反映する。
+ *
+ * 席の名前は参加した時点で焼いてある。待合室で名前を変えたときに
+ * ここを直さないと、同席の2人には前の名前のまま見え続ける。
+ * 対戦が始まったあとの席（seatSnapshot）は履歴なので触らない。
+ */
+async function syncRoomMemberName(db: any, userId: string, name: string) {
+  const room = await findRoom(db, userId);
+  if (!room || room.status !== 'lobby') return;
+  const me = (room.members || []).find((m: any) => m.playerId === userId);
+  if (!me || me.name === name) return;
+  me.name = name;
+  try { await saveRoom(db, room); } catch { /* 名札の反映に失敗しても進行は止めない */ }
 }
 
 const asMillis = (value: any) => (value ? new Date(value).getTime() : null);
@@ -536,6 +569,11 @@ async function route(ctx: any, path: string, body: any) {
   }
 
   if (path === '/me' || path === '/world/poll') {
+    // ここで1回だけ読み、下の viewOf へ渡す（読み取りを増やさない）。
+    const loaded = await loadProfile(ctx.db, userId);
+    // 名札がずれたままの口座を、取りに来たときに直す。/name を直す前に
+    // 名前を変えた人は、これで次の取得から他人にも新しい名前で見える。
+    await syncDisplayName(ctx.db, userId, loaded.profile.name);
     const mine = await findRoom(ctx.db, userId);
     // 取りに来ている＝その人は居る。他の2人はこれを見て接続中と判断する。
     await touchPresence(ctx.db, mine, userId);
@@ -545,8 +583,12 @@ async function route(ctx: any, path: string, body: any) {
     // 決着の手を打てなかった人（負け・引き分け・回線が切れていた人）も、
     // 次の定期取得で自分の報酬を受け取れるようにする。
     const pending = await findMatch(ctx.db, mine);
-    if (pending && Array.isArray(pending.rewards)) await settleMatchRewards(ctx.db, pending, userId);
-    return success(await viewOf(ctx.db, userId));
+    if (pending && Array.isArray(pending.rewards)) {
+      await settleMatchRewards(ctx.db, pending, userId);
+      // 報酬で資産が動いたので、読み直したものを返す。
+      return success(await viewOf(ctx.db, userId));
+    }
+    return success(await viewOf(ctx.db, userId, loaded.profile));
   }
 
   if (path === '/name') {
@@ -554,6 +596,11 @@ async function route(ctx: any, path: string, body: any) {
     if (!name) return fail('bad_name', '名前を入力してください。');
     const out = await mutateProfile(ctx, path, body, (draft) => { draft.name = name; return { ok: true, result: { name } }; });
     if (out.error) return out.error;
+    // 資産側だけ書き換えても、他人からは前の名前のまま見える。
+    // フレンド一覧・検索・ルームの席が読むのは profiles.display_name と
+    // ルームに焼いた members[].name の2つなので、どちらも一緒に直す。
+    await syncDisplayName(ctx.db, userId, name);
+    await syncRoomMemberName(ctx.db, userId, name);
     return success(await viewOf(ctx.db, userId, out.profile), { result: out.result, replay: out.replay });
   }
 

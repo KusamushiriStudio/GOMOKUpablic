@@ -4077,6 +4077,27 @@ var rules = __req("../../shared/rules.js");
 var storyEngine = __req("../../shared/story/engine.js");
 var stages = __req("../../shared/story/stages.js");
 
+// supabase/functions/api/identity.js
+var NAME_MAX = 16;
+var NAME_FALLBACK = "\u65C5\u4EBA";
+function invisible(cp) {
+  return cp <= 31 || cp === 127 || cp >= 8203 && cp <= 8207 || cp === 8232 || cp === 8233 || cp >= 8234 && cp <= 8238 || cp === 8288 || cp === 65279;
+}
+function sanitizeName(value) {
+  const raw = String(value ?? "").replace(/[<>&"'`\\]/g, "");
+  let out = "";
+  for (const ch of raw) {
+    if (!invisible(ch.codePointAt(0))) out += ch;
+  }
+  return out.trim().slice(0, NAME_MAX);
+}
+function displayNameOf(value) {
+  return sanitizeName(value) || NAME_FALLBACK;
+}
+function needsNameSync(current, wanted) {
+  return displayNameOf(wanted) !== String(current ?? "");
+}
+
 // supabase/functions/api/room-view.js
 var { ROOM_CAPACITY, DISCONNECT_GRACE_MS } = constants;
 function isConnected(member, room, userId, now = Date.now()) {
@@ -4694,7 +4715,7 @@ var json = (body, status = 200) => new Response(JSON.stringify(body), {
 var fail3 = (code, message, view, status = 400) => json({ ok: false, code, message, view }, status);
 var success = (view, extra = {}) => json({ ok: true, view, ...extra });
 var clone2 = (value) => structuredClone(value);
-var cleanName = (value) => String(value ?? "").replace(/[<>&"'`\\]/g, "").trim().slice(0, 16);
+var cleanName = (value) => sanitizeName(value);
 var requestHash = (path, body) => profile.bodyHash({ path, body });
 var randomHex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (x) => x.toString(16).padStart(2, "0")).join("").toUpperCase();
 function env(name) {
@@ -4925,10 +4946,26 @@ async function ensureIdentity(db, userId) {
     return;
   }
   const { profile: profile2 } = await loadProfile(db, userId);
-  const display_name = String((profile2 == null ? void 0 : profile2.name) || "\u65C5\u4EBA").slice(0, 16);
+  const display_name = displayNameOf(profile2 == null ? void 0 : profile2.name);
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const { error } = await db.from("profiles").upsert({ id: userId, display_name, player_code: newPlayerCode(), last_online_at: now });
     if (!error) return;
+  }
+}
+async function syncDisplayName(db, userId, name) {
+  const { data } = await db.from("profiles").select("display_name").eq("id", userId).maybeSingle();
+  if (!data || !needsNameSync(data.display_name, name)) return;
+  await db.from("profiles").update({ display_name: displayNameOf(name) }).eq("id", userId);
+}
+async function syncRoomMemberName(db, userId, name) {
+  const room = await findRoom(db, userId);
+  if (!room || room.status !== "lobby") return;
+  const me = (room.members || []).find((m) => m.playerId === userId);
+  if (!me || me.name === name) return;
+  me.name = name;
+  try {
+    await saveRoom(db, room);
+  } catch {
   }
 }
 var asMillis = (value) => value ? new Date(value).getTime() : null;
@@ -5127,12 +5164,17 @@ async function route(ctx, path, body) {
     return success(view, story.result === void 0 ? {} : { result: story.result });
   }
   if (path === "/me" || path === "/world/poll") {
+    const loaded = await loadProfile(ctx.db, userId);
+    await syncDisplayName(ctx.db, userId, loaded.profile.name);
     const mine = await findRoom(ctx.db, userId);
     await touchPresence(ctx.db, mine, userId);
     await maybeAutoStart(ctx.db, mine);
     const pending = await findMatch(ctx.db, mine);
-    if (pending && Array.isArray(pending.rewards)) await settleMatchRewards(ctx.db, pending, userId);
-    return success(await viewOf(ctx.db, userId));
+    if (pending && Array.isArray(pending.rewards)) {
+      await settleMatchRewards(ctx.db, pending, userId);
+      return success(await viewOf(ctx.db, userId));
+    }
+    return success(await viewOf(ctx.db, userId, loaded.profile));
   }
   if (path === "/name") {
     const name = cleanName(body.name);
@@ -5142,6 +5184,8 @@ async function route(ctx, path, body) {
       return { ok: true, result: { name } };
     });
     if (out.error) return out.error;
+    await syncDisplayName(ctx.db, userId, name);
+    await syncRoomMemberName(ctx.db, userId, name);
     return success(await viewOf(ctx.db, userId, out.profile), { result: out.result, replay: out.replay });
   }
   if (path === "/gacha") {
