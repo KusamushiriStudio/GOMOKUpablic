@@ -1,0 +1,5 @@
+Blender 5.2.2 LTS
+Build hash: d13f752e3b9c
+Build date: 2026-09-15
+Platform: Windows x64 portable
+Official archive SHA-256: 3849D17A682CBA006075AAA3F3597ECB5C9C30EC31035B2E092C53E40679B535

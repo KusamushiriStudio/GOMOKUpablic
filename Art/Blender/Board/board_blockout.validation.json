@@ -1,0 +1,37 @@
+{
+  "schema": "triad.blender.validation.v1",
+  "blender_version": "5.2.2 LTS",
+  "blend_file": "Art/Blender/Board/board_blockout.blend",
+  "passed": true,
+  "problem_count": 0,
+  "problems": [],
+  "objects": [
+    {
+      "name": "TRIAD_Board_11x17",
+      "type": "MESH",
+      "dimensions_m": [
+        0.44,
+        0.68,
+        0.03
+      ],
+      "location_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_euler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "materials": [
+        "MAT_Board_Wood"
+      ]
+    }
+  ]
+}

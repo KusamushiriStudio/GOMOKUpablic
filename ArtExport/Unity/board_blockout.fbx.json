@@ -1,0 +1,46 @@
+{
+  "schema": "triad.blender.export.v1",
+  "format": "FBX",
+  "blender_version": "5.2.2 LTS",
+  "source_blend": "Art/Blender/Board/board_blockout.blend",
+  "output": "ArtExport/Unity/board_blockout.fbx",
+  "settings": {
+    "use_selection": true,
+    "axis_forward": "-Z",
+    "axis_up": "Y",
+    "global_scale": 1.0,
+    "apply_unit_scale": true,
+    "bake_space_transform": true,
+    "add_leaf_bones": false,
+    "bake_anim": false
+  },
+  "objects": [
+    {
+      "name": "TRIAD_Board_11x17",
+      "type": "MESH",
+      "dimensions_m": [
+        0.44,
+        0.68,
+        0.03
+      ],
+      "location_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_euler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "materials": [
+        "MAT_Board_Wood"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "triad.blender.export.v1",
+  "format": "GLB",
+  "blender_version": "5.2.2 LTS",
+  "source_blend": "Art/Blender/Board/board_blockout.blend",
+  "output": "ArtExport/Web/board_blockout.glb",
+  "settings": {
+    "export_format": "GLB",
+    "use_selection": true,
+    "export_apply": true,
+    "export_yup": true
+  },
+  "objects": [
+    {
+      "name": "TRIAD_Board_11x17",
+      "type": "MESH",
+      "dimensions_m": [
+        0.44,
+        0.68,
+        0.03
+      ],
+      "location_m": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_euler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "materials": [
+        "MAT_Board_Wood"
+      ]
+    }
+  ]
+}

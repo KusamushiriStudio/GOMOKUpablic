@@ -1,0 +1,64 @@
+{
+  "schema": "triad.blender.validation.v1",
+  "blender_version": "5.2.2 LTS",
+  "blend_file": "Art/Blender/Stones/stones_blockout.blend",
+  "passed": true,
+  "problem_count": 0,
+  "problems": [],
+  "objects": [
+    {
+      "name": "TRIAD_Stone_Black",
+      "type": "MESH",
+      "dimensions_m": [
+        0.034,
+        0.034,
+        0.013
+      ],
+      "location_m": [
+        -0.03,
+        0.0,
+        0.0
+      ],
+      "rotation_euler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "materials": [
+        "MAT_Stone_Black"
+      ]
+    },
+    {
+      "name": "TRIAD_Stone_White",
+      "type": "MESH",
+      "dimensions_m": [
+        0.034,
+        0.034,
+        0.013
+      ],
+      "location_m": [
+        0.03,
+        0.0,
+        0.0
+      ],
+      "rotation_euler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "materials": [
+        "MAT_Stone_White"
+      ]
+    }
+  ]
+}
