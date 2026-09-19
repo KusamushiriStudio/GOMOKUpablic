@@ -1,0 +1,21 @@
+{
+  "name": "TRIAD.AssetTest.EditorTests",
+  "rootNamespace": "TRIAD.AssetTest.Tests",
+  "references": [
+    "TRIAD.AssetTest.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

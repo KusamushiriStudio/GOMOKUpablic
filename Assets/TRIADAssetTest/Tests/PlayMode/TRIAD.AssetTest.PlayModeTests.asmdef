@@ -1,0 +1,19 @@
+{
+  "name": "TRIAD.AssetTest.PlayModeTests",
+  "rootNamespace": "TRIAD.AssetTest.Tests",
+  "references": [
+    "TRIAD.AssetTest.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
