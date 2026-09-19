@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace TRIAD.AssetTest
@@ -43,9 +44,90 @@ namespace TRIAD.AssetTest
 
         private void QueueRebuild()
         {
-            if (Application.isPlaying || rebuildInEditMode)
+            if ((Application.isPlaying || rebuildInEditMode) && !HasValidGeneratedContent())
                 rebuildQueued = true;
         }
+
+        /// <summary>
+        /// Returns true when the serialized preview already matches the current settings.
+        /// This prevents an editor open on another operating system from regenerating the
+        /// complete scene with different Unity file IDs.
+        /// </summary>
+        public bool HasValidGeneratedContent()
+        {
+            if (spacing <= 0f || pointScale <= 0f) return false;
+
+            Transform generatedRoot = null;
+            int generatedRootCount = 0;
+            foreach (Transform child in transform)
+            {
+                if (child.name != GeneratedRootName) continue;
+                generatedRoot = child;
+                generatedRootCount++;
+            }
+
+            if (generatedRootCount != 1 || generatedRoot == null) return false;
+
+            int boardCount = 0;
+            int pointCount = 0;
+            int cameraCount = 0;
+            int lightCount = 0;
+            var labels = new HashSet<string>();
+
+            foreach (Transform child in generatedRoot)
+            {
+                if (child.name == "TEMP_Board")
+                {
+                    boardCount++;
+                    var expectedScale = new Vector3(
+                        BoardCoordinate.ColumnCount * spacing,
+                        0.12f,
+                        BoardCoordinate.RowCount * spacing);
+                    if (!Approximately(child.localPosition, new Vector3(0f, -0.08f, 0f)) ||
+                        !Approximately(child.localScale, expectedScale))
+                        return false;
+                    continue;
+                }
+
+                if (child.name.StartsWith("TEMP_Point_"))
+                {
+                    pointCount++;
+                    string label = child.name.Substring("TEMP_Point_".Length);
+                    BoardCoordinate coordinate;
+                    try
+                    {
+                        coordinate = BoardCoordinate.FromLabel(label);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+
+                    if (!labels.Add(coordinate.Label)) return false;
+
+                    float expectedScale = coordinate.Label == "F9" ? pointScale * 1.75f : pointScale;
+                    if (!Approximately(child.localPosition, coordinate.ToLocalPosition(spacing, 0f)) ||
+                        !Approximately(child.localScale, Vector3.one * expectedScale))
+                        return false;
+                    continue;
+                }
+
+                if (child.GetComponent<Camera>() != null) cameraCount++;
+
+                Light light = child.GetComponent<Light>();
+                if (light != null && light.type == LightType.Directional) lightCount++;
+            }
+
+            return generatedRoot.childCount == BoardCoordinate.IntersectionCount + 3 &&
+                   boardCount == 1 &&
+                   pointCount == BoardCoordinate.IntersectionCount &&
+                   labels.Count == BoardCoordinate.IntersectionCount &&
+                   cameraCount == 1 &&
+                   lightCount == 1;
+        }
+
+        private static bool Approximately(Vector3 left, Vector3 right) =>
+            (left - right).sqrMagnitude <= 0.000001f;
 
         [ContextMenu("Rebuild TEMP Grid")]
         public void Rebuild()

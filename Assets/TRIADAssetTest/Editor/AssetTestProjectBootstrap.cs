@@ -82,6 +82,7 @@ namespace TRIAD.AssetTest.Editor
         private static void EnsureScene()
         {
             Scene scene;
+            bool sceneChanged = false;
             if (File.Exists(ScenePath))
             {
                 scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
@@ -93,8 +94,7 @@ namespace TRIAD.AssetTest.Editor
 
                 var root = new GameObject("AssetTestRoot");
                 root.AddComponent<BoardGridPreview>();
-
-                EditorSceneManager.SaveScene(scene, ScenePath);
+                sceneChanged = true;
             }
 
             EnsureBuildSettings(ScenePath);
@@ -104,11 +104,20 @@ namespace TRIAD.AssetTest.Editor
             {
                 var root = new GameObject("AssetTestRoot");
                 preview = root.AddComponent<BoardGridPreview>();
+                sceneChanged = true;
             }
 
-            preview.Rebuild();
-            EditorSceneManager.MarkSceneDirty(scene);
-            EditorSceneManager.SaveScene(scene, ScenePath);
+            if (!preview.HasValidGeneratedContent())
+            {
+                preview.Rebuild();
+                sceneChanged = true;
+            }
+
+            if (sceneChanged)
+            {
+                EditorSceneManager.MarkSceneDirty(scene);
+                EditorSceneManager.SaveScene(scene, ScenePath);
+            }
         }
 
         private static void EnsureBuildSettings(string scenePath)

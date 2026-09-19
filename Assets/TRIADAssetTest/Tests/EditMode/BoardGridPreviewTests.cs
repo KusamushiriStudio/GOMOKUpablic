@@ -47,6 +47,56 @@ namespace TRIAD.AssetTest.Tests
                 Assert.That(pointCount, Is.EqualTo(BoardCoordinate.IntersectionCount));
                 Assert.That(labels, Has.Count.EqualTo(BoardCoordinate.IntersectionCount));
                 Assert.That(f9Count, Is.EqualTo(1));
+                Assert.That(preview.HasValidGeneratedContent(), Is.True);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void HasValidGeneratedContent_DetectsStalePointTransform()
+        {
+            var root = new GameObject("TestAssetRoot");
+
+            try
+            {
+                BoardGridPreview preview = root.AddComponent<BoardGridPreview>();
+                preview.Rebuild();
+                Assert.That(preview.HasValidGeneratedContent(), Is.True);
+
+                Transform point = root.transform.Find("TEMP_GeneratedGrid/TEMP_Point_A1");
+                Assert.That(point, Is.Not.Null);
+                point.localPosition += Vector3.right;
+
+                Assert.That(preview.HasValidGeneratedContent(), Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void Enable_DoesNotRegenerateValidSerializedGrid()
+        {
+            var root = new GameObject("TestAssetRoot");
+
+            try
+            {
+                BoardGridPreview preview = root.AddComponent<BoardGridPreview>();
+                preview.Rebuild();
+                Transform generated = root.transform.Find("TEMP_GeneratedGrid");
+                int originalInstanceId = generated.gameObject.GetInstanceID();
+
+                preview.enabled = false;
+                preview.enabled = true;
+                preview.SendMessage("Update");
+
+                generated = root.transform.Find("TEMP_GeneratedGrid");
+                Assert.That(generated.gameObject.GetInstanceID(), Is.EqualTo(originalInstanceId));
+                Assert.That(preview.HasValidGeneratedContent(), Is.True);
             }
             finally
             {
