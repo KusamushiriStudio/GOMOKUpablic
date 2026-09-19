@@ -19,12 +19,12 @@ namespace TRIAD.Core.Skills
 
         private static readonly IReadOnlyDictionary<string, SkillDefinition> V99 = new Dictionary<string, SkillDefinition>
         {
-            [StableIds.Spark] = new SkillDefinition(StableIds.Spark, 1, 14),
-            [StableIds.Ward] = new SkillDefinition(StableIds.Ward, 1, 15),
-            [StableIds.Windwalk] = new SkillDefinition(StableIds.Windwalk, 1, 14),
-            [StableIds.Freeze] = new SkillDefinition(StableIds.Freeze, 1, 15),
-            [StableIds.Pull] = new SkillDefinition(StableIds.Pull, 1, 14),
-            [StableIds.Transmute] = new SkillDefinition(StableIds.Transmute, 1, 14)
+            [StableIds.Spark] = new SkillDefinition(StableIds.Spark, 1, 12),
+            [StableIds.Ward] = new SkillDefinition(StableIds.Ward, 1, 12),
+            [StableIds.Windwalk] = new SkillDefinition(StableIds.Windwalk, 1, 12),
+            [StableIds.Freeze] = new SkillDefinition(StableIds.Freeze, 1, 12),
+            [StableIds.Pull] = new SkillDefinition(StableIds.Pull, 1, 12),
+            [StableIds.Transmute] = new SkillDefinition(StableIds.Transmute, 1, 12)
         };
 
         public static SkillDefinition Get(string rulesetId, string skillId)

@@ -151,6 +151,107 @@ namespace TRIAD.Core.Tests
             Assert.AreEqual(2, V99Tuning.Legacy.WardBreakEnergy);
         }
 
+        [TestCase(StableIds.Spark, 2)]
+        [TestCase(StableIds.Ward, 3)]
+        [TestCase(StableIds.Windwalk, 2)]
+        [TestCase(StableIds.Freeze, 3)]
+        [TestCase(StableIds.Pull, 2)]
+        [TestCase(StableIds.Transmute, 2)]
+        public void V99_UsesFloorAndExtraPlacements_AreIndependent(string skillId, int extraPlacements)
+        {
+            var skill = SkillCatalog.Get(RulesetCatalog.PvpV99Id, skillId);
+            var enhancement = V99Tuning.Legacy.GetEnhancement(skillId);
+            Assert.AreEqual(1, skill.Cost);
+            Assert.AreEqual(12, skill.Uses);
+            Assert.AreEqual(12, enhancement.UsesFloor);
+            Assert.AreEqual(extraPlacements, enhancement.ExtraPlacements);
+        }
+
+        [Test]
+        public void V99_SparkKeepsTurnUntilLegacyExtraPlacementCompletes()
+        {
+            var state = MatchState.Create(RulesetCatalog.PvpV99Id, 1);
+            state.Board.Place(new BoardCoordinate(1, 1), 2);
+            state.Energy[1] = 6;
+
+            var skill = RuleEngine.Apply(state, MatchAction.Skill(1, StableIds.Spark, new BoardCoordinate(1, 1)));
+            Assert.IsTrue(skill.Success);
+            Assert.AreEqual(1, skill.State.TurnSeat);
+            Assert.AreEqual(1, skill.State.PendingExtraPlacements);
+            Assert.AreEqual(0, skill.State.Ply);
+
+            var extra = RuleEngine.Apply(skill.State, MatchAction.Extra(1, new BoardCoordinate(1, 1)));
+            Assert.IsTrue(extra.Success);
+            Assert.AreEqual(1, extra.State.Board.GetOwner(new BoardCoordinate(1, 1)));
+            Assert.AreEqual(0, extra.State.PendingExtraPlacements);
+            Assert.AreEqual(2, extra.State.TurnSeat);
+            Assert.AreEqual(1, extra.State.Ply);
+        }
+
+        [Test]
+        public void V99_OrderPenalty_ReducesButDoesNotMergeExtraPlacementsIntoUses()
+        {
+            var state = MatchState.Create(RulesetCatalog.PvpV99Id, 1);
+            state.Board.Place(new BoardCoordinate(2, 2), 1);
+            state.Energy[1] = 6;
+
+            var result = RuleEngine.Apply(state, MatchAction.Skill(1, StableIds.Ward, new BoardCoordinate(2, 2)));
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(2, result.State.PendingExtraPlacements);
+            Assert.AreEqual(1, result.State.GetSkillUseCount(1, StableIds.Ward));
+        }
+
+        [Test]
+        public void Ward_RejectsDuplicateGuardWithoutMutatingTheTurn()
+        {
+            var state = MatchState.Create(RulesetCatalog.PvpBalanceV2Id);
+            var target = new BoardCoordinate(2, 2);
+            state.Board.Place(target, 1);
+            state.WardedIndices.Add(target.ToIndex(state.Board.Width, state.Board.Height));
+            state.Energy[1] = 6;
+
+            var result = RuleEngine.Apply(state, MatchAction.Skill(1, StableIds.Ward, target));
+            Assert.IsFalse(result.Success);
+            Assert.AreEqual("bad_target", result.Error);
+            Assert.AreSame(state, result.State);
+        }
+
+        [Test]
+        public void PullAndTransmute_ResolveTheWinnerCreatedByTheSkillEffect()
+        {
+            var pull = MatchState.Create(RulesetCatalog.PvpBalanceV2Id);
+            pull.Energy[1] = 6;
+            for (var x = 0; x < 4; x++) pull.Board.Place(new BoardCoordinate(x, 0), 2);
+            pull.Board.Place(new BoardCoordinate(5, 0), 2);
+            var pullResult = RuleEngine.Apply(pull,
+                MatchAction.Skill(1, StableIds.Pull, new BoardCoordinate(4, 0), new BoardCoordinate(5, 0)));
+            Assert.IsTrue(pullResult.Success);
+            Assert.AreEqual(2, pullResult.State.WinnerSeat);
+
+            var transmute = MatchState.Create(RulesetCatalog.PvpBalanceV2Id);
+            transmute.Energy[1] = 6;
+            for (var x = 0; x < 4; x++) transmute.Board.Place(new BoardCoordinate(x, 0), 1);
+            transmute.Board.Place(new BoardCoordinate(4, 0), 2);
+            var transmuteResult = RuleEngine.Apply(transmute,
+                MatchAction.Skill(1, StableIds.Transmute, new BoardCoordinate(4, 0)));
+            Assert.IsTrue(transmuteResult.Success);
+            Assert.AreEqual(1, transmuteResult.State.WinnerSeat);
+        }
+
+        [Test]
+        public void V99_WardBreakRecovery_HappensAfterCostAndCapsAtMaxEnergy()
+        {
+            var state = MatchState.Create(RulesetCatalog.PvpV99Id, 1);
+            var target = new BoardCoordinate(2, 2);
+            state.Board.Place(target, 2);
+            state.WardedIndices.Add(target.ToIndex(state.Board.Width, state.Board.Height));
+            state.Energy[1] = MatchState.MaxEnergy;
+
+            var result = RuleEngine.Apply(state, MatchAction.Skill(1, StableIds.Spark, target));
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(MatchState.MaxEnergy, result.State.Energy[1]);
+        }
+
         [Test]
         public void StoryGachaAndLegacyContracts_AreLocked()
         {

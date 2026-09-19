@@ -15,6 +15,12 @@ namespace TRIAD.Core.Rules
             if (current.IsFinished) return ActionResult.Reject(current, "match_finished");
             if (action.Seat != current.TurnSeat) return ActionResult.Reject(current, "not_your_turn");
 
+            if (current.PendingExtraPlacements > 0)
+                return action.Kind == MatchActionKind.Extra
+                    ? ApplyExtra(current, action)
+                    : ActionResult.Reject(current, "need_extra");
+
+            if (action.Kind == MatchActionKind.Extra) return ActionResult.Reject(current, "no_pending_extra");
             return action.Kind == MatchActionKind.Place ? ApplyPlace(current, action) : ApplySkill(current, action);
         }
 
@@ -51,9 +57,60 @@ namespace TRIAD.Core.Rules
             if (!ApplySkillEffect(next, action, events, out var error)) return ActionResult.Reject(current, error);
 
             next.Energy[action.Seat] -= definition.Cost;
+            if (events.Contains("v99:ward_break_energy"))
+                next.Energy[action.Seat] = Math.Min(MatchState.MaxEnergy,
+                    next.Energy[action.Seat] + V99Tuning.Legacy.WardBreakEnergy);
             next.IncrementSkillUse(action.Seat, action.SkillId);
-            next.AdvanceTurn(); // official behavior: skill consumes the whole turn
+            var winningLine = WinDetector.FindWinningLine(next.Board, action.Target);
+            if (winningLine != null)
+            {
+                next.WinnerSeat = winningLine.Seat;
+                next.ClearPendingExtra();
+                return ActionResult.Accept(next, winningLine, events);
+            }
+
+            if (next.Ruleset.UsesV99Tuning)
+            {
+                var extra = V99Tuning.Legacy.ExtraPlacementsFor(action.SkillId, next.OrderIndexOf(action.Seat));
+                if (extra > 0 && HasLegalExtraPlacement(next, BannedIndexForV99Skill(next, action)))
+                {
+                    next.PendingExtraPlacements = extra;
+                    next.PendingSkillId = action.SkillId;
+                    next.PendingBannedIndex = BannedIndexForV99Skill(next, action);
+                }
+                else next.AdvanceTurn();
+            }
+            else next.AdvanceTurn(); // official balance-v2 behavior: skill consumes the whole turn
             return ActionResult.Accept(next, null, events);
+        }
+
+        private static ActionResult ApplyExtra(MatchState current, MatchAction action)
+        {
+            if (!current.Board.IsInside(action.Target)) return ActionResult.Reject(current, "out_of_bounds");
+            if (!current.Board.IsEmpty(action.Target)) return ActionResult.Reject(current, "occupied");
+
+            var targetIndex = action.Target.ToIndex(current.Board.Width, current.Board.Height);
+            if (current.PendingBannedIndex == targetIndex) return ActionResult.Reject(current, "banned_extra");
+            if (current.FrozenUntilPly.TryGetValue(targetIndex, out var until) && current.Ply < until)
+                return ActionResult.Reject(current, "frozen");
+
+            var next = current.Clone();
+            next.Board.Place(action.Target, action.Seat);
+            next.PendingExtraPlacements--;
+            var line = WinDetector.FindWinningLine(next.Board, action.Target);
+            if (line != null)
+            {
+                next.WinnerSeat = line.Seat;
+                next.ClearPendingExtra();
+                return ActionResult.Accept(next, line, new[] { "extra" });
+            }
+
+            if (next.PendingExtraPlacements <= 0 || !HasLegalExtraPlacement(next, next.PendingBannedIndex))
+            {
+                next.ClearPendingExtra();
+                next.AdvanceTurn();
+            }
+            return ActionResult.Accept(next, null, new[] { "extra" });
         }
 
         private static bool ApplySkillEffect(MatchState state, MatchAction action, List<string> events, out string error)
@@ -77,7 +134,6 @@ namespace TRIAD.Core.Rules
             {
                 if (!state.Ruleset.UsesV99Tuning) { error = "guarded"; return false; }
                 state.WardedIndices.Remove(index);
-                state.Energy[action.Seat] = Math.Min(MatchState.MaxEnergy, state.Energy[action.Seat] + 2);
                 events.Add("v99:ward_break_energy");
             }
             state.Board.SetOwner(action.Target, 0);
@@ -89,7 +145,9 @@ namespace TRIAD.Core.Rules
         {
             if (!state.Board.IsInside(action.Target)) { error = "out_of_bounds"; return false; }
             if (state.Board.GetOwner(action.Target) != action.Seat) { error = "not_own_stone"; return false; }
-            state.WardedIndices.Add(action.Target.ToIndex(state.Board.Width, state.Board.Height));
+            var index = action.Target.ToIndex(state.Board.Width, state.Board.Height);
+            if (state.WardedIndices.Contains(index)) { error = "bad_target"; return false; }
+            state.WardedIndices.Add(index);
             error = null;
             return true;
         }
@@ -164,6 +222,28 @@ namespace TRIAD.Core.Rules
             var dx = Math.Abs(a.X - b.X);
             var dy = Math.Abs(a.Y - b.Y);
             return dx <= 1 && dy <= 1 && (dx != 0 || dy != 0);
+        }
+
+        private static int? BannedIndexForV99Skill(MatchState state, MatchAction action)
+        {
+            if (action.SkillId == StableIds.Windwalk || action.SkillId == StableIds.Pull || action.SkillId == StableIds.Freeze)
+                return action.Target.ToIndex(state.Board.Width, state.Board.Height);
+            if (action.SkillId == StableIds.Spark && !V99Tuning.Legacy.SparkCanRefill)
+                return action.Target.ToIndex(state.Board.Width, state.Board.Height);
+            return null;
+        }
+
+        private static bool HasLegalExtraPlacement(MatchState state, int? bannedIndex)
+        {
+            for (var index = 0; index < state.Board.Size; index++)
+            {
+                if (bannedIndex == index) continue;
+                var coordinate = BoardCoordinate.FromIndex(index, state.Board.Width, state.Board.Height);
+                if (!state.Board.IsEmpty(coordinate)) continue;
+                if (state.FrozenUntilPly.TryGetValue(index, out var until) && state.Ply < until) continue;
+                return true;
+            }
+            return false;
         }
     }
 }

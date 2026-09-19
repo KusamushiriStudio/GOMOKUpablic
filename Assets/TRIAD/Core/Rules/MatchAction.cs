@@ -5,7 +5,8 @@ namespace TRIAD.Core.Rules
     public enum MatchActionKind
     {
         Place,
-        Skill
+        Skill,
+        Extra
     }
 
     public sealed class MatchAction
@@ -30,5 +31,8 @@ namespace TRIAD.Core.Rules
 
         public static MatchAction Skill(int seat, string skillId, BoardCoordinate target, BoardCoordinate? source = null) =>
             new MatchAction(MatchActionKind.Skill, seat, target, skillId, source);
+
+        public static MatchAction Extra(int seat, BoardCoordinate target) =>
+            new MatchAction(MatchActionKind.Extra, seat, target, null, null);
     }
 }

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "source": "index.html",
+  "sourceCommit": "1bf36894967a13358a09eda1d5b518064db5e488",
+  "modules": [
+    { "id": "../../shared/constants.js", "output": "shared/constants.js", "category": "board-skills-gacha-save" },
+    { "id": "../../shared/rules.js", "output": "shared/rules.js", "category": "rules-board-win-skills" },
+    { "id": "../../shared/rulesets.js", "output": "shared/rulesets.js", "category": "rulesets" },
+    { "id": "../../shared/story/stages.js", "output": "shared/story/stages.js", "category": "story" },
+    { "id": "../../shared/story/engine.js", "output": "shared/story/engine.js", "category": "story" },
+    { "id": "../../shared/profile.js", "output": "shared/profile.js", "category": "profile-save-gacha" },
+    { "id": "../../shared/gacha.js", "output": "shared/gacha.js", "category": "gacha" },
+    { "id": "../../shared/evaluation.js", "output": "shared/evaluation.js", "category": "evaluation" },
+    { "id": "localstore.js", "output": "network/localstore.js", "category": "profile-save" },
+    { "id": "net.js", "output": "network/net.js", "category": "network-contract" },
+    { "id": "dbnet.js", "output": "network/dbnet.js", "category": "network-contract" },
+    { "id": "supanet.js", "output": "network/supanet.js", "category": "network-contract" }
+  ]
+}

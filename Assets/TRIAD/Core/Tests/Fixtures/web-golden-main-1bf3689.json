@@ -1,0 +1,792 @@
+{
+  "schemaVersion": 1,
+  "webSourceCommit": "1bf36894967a13358a09eda1d5b518064db5e488",
+  "source": "index.html embedded module registry",
+  "sourceSha256": "70a879aeae9e5ef9e6790a069d609c0beee8f9d1ec2a6e577c276d3f1b97d216",
+  "fixtureCount": 106,
+  "fixtures": [
+    {
+      "id": "board.width",
+      "category": "Board Constants",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 11
+    },
+    {
+      "id": "board.height",
+      "category": "Board Constants",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 17
+    },
+    {
+      "id": "board.size",
+      "category": "Board Constants",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 187
+    },
+    {
+      "id": "board.centerIndex",
+      "category": "Board Constants",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 93
+    },
+    {
+      "id": "board.winLength",
+      "category": "Board Constants",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 5
+    },
+    {
+      "id": "board.legacyWidth",
+      "category": "Board Constants",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 15
+    },
+    {
+      "id": "board.legacyHeight",
+      "category": "Board Constants",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 15
+    },
+    {
+      "id": "win.horizontal5.owner",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "win.horizontal5.length",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 5
+    },
+    {
+      "id": "win.vertical5.owner",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "win.vertical5.length",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 5
+    },
+    {
+      "id": "win.diagonalDown5.owner",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "win.diagonalDown5.length",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 5
+    },
+    {
+      "id": "win.diagonalUp5.owner",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "win.diagonalUp5.length",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 5
+    },
+    {
+      "id": "win.horizontal6.owner",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "win.horizontal6.length",
+      "category": "Win Detection",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 6
+    },
+    {
+      "id": "skill.spark.cost",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 4
+    },
+    {
+      "id": "skill.spark.uses",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.ward.cost",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.ward.uses",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.windwalk.cost",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "skill.windwalk.uses",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.freeze.cost",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.freeze.uses",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.pull.cost",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 4
+    },
+    {
+      "id": "skill.pull.uses",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.transmute.cost",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 6
+    },
+    {
+      "id": "skill.transmute.uses",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "skill.spark.effect.targetOwner",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 0
+    },
+    {
+      "id": "skill.spark.effect.energy",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.ward.effect.guardOwner",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "skill.ward.effect.duplicateCode",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "string",
+      "expectedString": "bad_target"
+    },
+    {
+      "id": "skill.windwalk.effect.sourceOwner",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 0
+    },
+    {
+      "id": "skill.windwalk.effect.targetOwner",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "skill.windwalk.effect.targetGuard",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "skill.freeze.effect.releaseClock",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "skill.pull.effect.winner",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "skill.transmute.effect.winner",
+      "category": "6 Skills",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_balance_v2.seats",
+      "category": "pvp_balance_v2",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "ruleset.pvp_balance_v2.iceOffset",
+      "category": "pvp_balance_v2",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "ruleset.pvp_balance_v2.declaredSkillPlusPlace",
+      "category": "pvp_balance_v2",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": true
+    },
+    {
+      "id": "ruleset.pvp_balance_v2.telegraph",
+      "category": "pvp_balance_v2",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": false
+    },
+    {
+      "id": "ruleset.pvp_balance_v2.minStoneJudgement",
+      "category": "pvp_balance_v2",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": true
+    },
+    {
+      "id": "ruleset.pvp_balance_v2.rewards",
+      "category": "pvp_balance_v2",
+      "comparison": "EXACT",
+      "kind": "string",
+      "expectedString": "none"
+    },
+    {
+      "id": "ruleset.pvp_balance_v2.stats",
+      "category": "pvp_balance_v2",
+      "comparison": "EXACT",
+      "kind": "string",
+      "expectedString": "verify"
+    },
+    {
+      "id": "ruleset.pvp_v99.seats",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "ruleset.pvp_v99.iceOffset",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "ruleset.pvp_v99.skillPlusPlace",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": false
+    },
+    {
+      "id": "ruleset.pvp_v99.telegraph",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": false
+    },
+    {
+      "id": "ruleset.pvp_v99.minStoneJudgement",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": true
+    },
+    {
+      "id": "ruleset.pvp_v99.randomStartSeat",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": true
+    },
+    {
+      "id": "ruleset.pvp_v99.rewards",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "string",
+      "expectedString": "pvp"
+    },
+    {
+      "id": "ruleset.pvp_v99.stats",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "string",
+      "expectedString": "pvp"
+    },
+    {
+      "id": "ruleset.pvp_v99.unlockTurn",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 0
+    },
+    {
+      "id": "ruleset.pvp_v99.longTurn",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 44
+    },
+    {
+      "id": "ruleset.pvp_v99.sparkCanRefill",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": true
+    },
+    {
+      "id": "ruleset.pvp_v99.sparkBreaksWard",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "bool",
+      "expectedBool": true
+    },
+    {
+      "id": "ruleset.pvp_v99.wardBreakEnergy",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "ruleset.pvp_v99.unlockOffsetByOrder",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "intArray",
+      "expectedIntArray": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ruleset.pvp_v99.orderPenalty",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "intArray",
+      "expectedIntArray": [
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "ruleset.pvp_v99.longRecover",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "stringArray",
+      "expectedStringArray": [
+        "hayate",
+        "kuon",
+        "akari"
+      ]
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.hibana.cost",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.hibana.usesFloor",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 12
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.hibana.extra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.mamori.cost",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.mamori.usesFloor",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 12
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.mamori.extra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.hayate.cost",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.hayate.usesFloor",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 12
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.hayate.extra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.yukine.cost",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.yukine.usesFloor",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 12
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.yukine.extra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 3
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.kuon.cost",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.kuon.usesFloor",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 12
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.kuon.extra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.akari.cost",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.akari.usesFloor",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 12
+    },
+    {
+      "id": "ruleset.pvp_v99.enhance.akari.extra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.usesCap",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 12
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.useCountAfterSkill",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.pendingAfterSkill",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.turnAfterSkill",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.plyAfterSkill",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 0
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.ownerAfterExtra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.turnAfterExtra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 2
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.plyAfterExtra",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "ruleset.pvp_v99.behavior.energyAfterWardBreak",
+      "category": "pvp_v99 Legacy",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 6
+    },
+    {
+      "id": "story.stageCount",
+      "category": "Story Unlock",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 30
+    },
+    {
+      "id": "story.trainingStages",
+      "category": "Story Unlock",
+      "comparison": "EXACT",
+      "kind": "intArray",
+      "expectedIntArray": [
+        1,
+        2,
+        3,
+        6,
+        11,
+        16,
+        21,
+        26
+      ]
+    },
+    {
+      "id": "story.skillUnlocks",
+      "category": "Story Unlock",
+      "comparison": "EXACT",
+      "kind": "stringArray",
+      "expectedStringArray": [
+        "3:spark",
+        "6:ward",
+        "11:windwalk",
+        "16:freeze",
+        "21:pull",
+        "26:transmute"
+      ]
+    },
+    {
+      "id": "gacha.singleCost",
+      "category": "Gacha",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 1
+    },
+    {
+      "id": "gacha.multiCost",
+      "category": "Gacha",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 10
+    },
+    {
+      "id": "gacha.multiPullCount",
+      "category": "Gacha",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 11
+    },
+    {
+      "id": "gacha.cosmeticPoolCount",
+      "category": "Gacha",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 28
+    },
+    {
+      "id": "gacha.initialCharacterCount",
+      "category": "Gacha",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 6
+    },
+    {
+      "id": "gacha.rarityWeights",
+      "category": "Gacha",
+      "comparison": "EXACT",
+      "kind": "intArray",
+      "expectedIntArray": [
+        300,
+        1200,
+        3500,
+        5000
+      ]
+    },
+    {
+      "id": "gacha.totalWeight",
+      "category": "Gacha",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 10000
+    },
+    {
+      "id": "save.currentVersion",
+      "category": "Save / Migration Contract",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 5
+    },
+    {
+      "id": "save.migratableVersions",
+      "category": "Save / Migration Contract",
+      "comparison": "EXACT",
+      "kind": "intArray",
+      "expectedIntArray": [
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "id": "save.legacyBoardSize",
+      "category": "Save / Migration Contract",
+      "comparison": "EXACT",
+      "kind": "int",
+      "expectedInt": 225
+    },
+    {
+      "id": "network.initialRevision",
+      "category": "requestId / revision / stateVersion Contract",
+      "comparison": "NOT_RUN",
+      "kind": "none",
+      "reason": "Web observed revision=0, but MatchState has no Revision field yet.",
+      "webObserved": 0
+    },
+    {
+      "id": "network.revisionAfterOneAction",
+      "category": "requestId / revision / stateVersion Contract",
+      "comparison": "NOT_RUN",
+      "kind": "none",
+      "reason": "Web observed revision=1 after one accepted action, but MatchState has no Revision field yet.",
+      "webObserved": 1
+    },
+    {
+      "id": "network.requestIdReplay",
+      "category": "requestId / revision / stateVersion Contract",
+      "comparison": "NOT_RUN",
+      "kind": "none",
+      "reason": "Web replayed a duplicate requestId without mutation, but the Pure C# Core has no request ledger.",
+      "webObserved": true
+    },
+    {
+      "id": "network.stateVersion",
+      "category": "requestId / revision / stateVersion Contract",
+      "comparison": "NOT_RUN",
+      "kind": "none",
+      "reason": "The checked-in Web Core exposes match revision, but no stateVersion value to compare with MatchResultDto.StateVersion.",
+      "webObserved": null
+    }
+  ]
+}

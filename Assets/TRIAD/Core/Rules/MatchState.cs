@@ -22,6 +22,9 @@ namespace TRIAD.Core.Rules
         public int? StartSeat { get; }
         public int[] Order { get; }
         public int[] TurnsTaken { get; }
+        public int PendingExtraPlacements { get; internal set; }
+        public string PendingSkillId { get; internal set; }
+        public int? PendingBannedIndex { get; internal set; }
 
         private MatchState(RulesetDefinition ruleset, BoardState board, int turnSeat, int ply, int winnerSeat,
             int[] energy, HashSet<int> wards, Dictionary<int, int> frozen,
@@ -77,9 +80,13 @@ namespace TRIAD.Core.Rules
             var uses = new Dictionary<int, Dictionary<string, int>>();
             foreach (var pair in SkillUses) uses[pair.Key] = new Dictionary<string, int>(pair.Value);
 
-            return new MatchState(Ruleset, Board.Clone(), TurnSeat, Ply, WinnerSeat,
+            var clone = new MatchState(Ruleset, Board.Clone(), TurnSeat, Ply, WinnerSeat,
                 (int[])Energy.Clone(), new HashSet<int>(WardedIndices), new Dictionary<int, int>(FrozenUntilPly),
                 uses, StartSeat, Order == null ? null : (int[])Order.Clone(), TurnsTaken == null ? null : (int[])TurnsTaken.Clone());
+            clone.PendingExtraPlacements = PendingExtraPlacements;
+            clone.PendingSkillId = PendingSkillId;
+            clone.PendingBannedIndex = PendingBannedIndex;
+            return clone;
         }
 
         public int GetSkillUseCount(int seat, string skillId) => SkillUses[seat].TryGetValue(skillId, out var count) ? count : 0;
@@ -91,6 +98,19 @@ namespace TRIAD.Core.Rules
             Ply++;
             TurnSeat = TurnSeat % Ruleset.Seats + 1;
             Energy[TurnSeat] = Math.Min(MaxEnergy, Energy[TurnSeat] + 1);
+        }
+
+        internal int OrderIndexOf(int seat)
+        {
+            if (Order == null) return seat - 1;
+            return Array.IndexOf(Order, seat);
+        }
+
+        internal void ClearPendingExtra()
+        {
+            PendingExtraPlacements = 0;
+            PendingSkillId = null;
+            PendingBannedIndex = null;
         }
 
         private static int[] BuildOrder(int seats, int start)
