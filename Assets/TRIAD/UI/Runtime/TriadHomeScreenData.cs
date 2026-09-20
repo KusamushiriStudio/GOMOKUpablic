@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace TRIAD.UI
 {
-    public enum TriadHomeRoute { Battle, Story, World, Gacha, Wardrobe, CharacterTraining }
+    public enum TriadHomeRoute { Home, Battle, Story, World, Gacha, Wardrobe, CharacterTraining, Community, Settings }
     public enum TriadStoryBannerKind { Default, NewChapter, Announcement }
 
     public static class TriadHomeRouteContract
@@ -12,12 +12,15 @@ namespace TRIAD.UI
         {
             return route switch
             {
+                TriadHomeRoute.Home => "home",
                 TriadHomeRoute.Battle => "play",
                 TriadHomeRoute.Story => "story",
                 TriadHomeRoute.World => "online",
                 TriadHomeRoute.Gacha => "gacha",
                 TriadHomeRoute.Wardrobe => "wardrobe",
                 TriadHomeRoute.CharacterTraining => "chars",
+                TriadHomeRoute.Community => "friends",
+                TriadHomeRoute.Settings => "settings",
                 _ => throw new ArgumentOutOfRangeException(nameof(route), route, null)
             };
         }
@@ -54,6 +57,7 @@ namespace TRIAD.UI
         public string nextStoryTitle = "花骸の夜桜";
         public TriadStoryBannerKind storyKind = TriadStoryBannerKind.NewChapter;
         public bool hasNewGacha = true;
+        public string playerCode = "TRIAD-8F3K-2M7Q";
 
         public int PlayerLevel => 1 + Mathf.Max(0, playerXp) / 100;
         public int XpIntoLevel => Mathf.Max(0, playerXp) % 100;
