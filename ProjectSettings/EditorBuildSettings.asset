@@ -9,7 +9,7 @@ EditorBuildSettings:
     path: Assets/TRIADAssetTest/Scenes/AssetTestScene.unity
     guid: fc6e7c14fb3506042bdf7b26fb157fdb
   - enabled: 1
-    path: Assets/TRIAD/UI/Scenes/HomePhase12.unity
-    guid: 94a2998276c109d4f89e1f794451b47d
+    path: Assets/TRIAD/UI/Scenes/HomePhase13.unity
+    guid: e6d3486eb92b9fa4e9a384e182ce8842
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0
