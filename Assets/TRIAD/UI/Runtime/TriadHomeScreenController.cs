@@ -14,6 +14,7 @@ namespace TRIAD.UI
         [SerializeField] private TriadMainCtaView mainCta;
         [SerializeField] private TriadSubMenuView subMenu;
         [SerializeField] private TriadCommunityView community;
+        [SerializeField] private TriadBottomNavigationView bottomNavigation;
         private readonly TriadHomeNavigationGate navigationGate = new();
 
         public TriadHomeSnapshot Snapshot => snapshot;
@@ -22,10 +23,11 @@ namespace TRIAD.UI
 
         public void Configure(TriadHomeHeaderView headerView, TriadPlayerStatusView playerView,
             TriadHeroAreaView heroView, TriadStoryBannerView storyView, TriadMainCtaView ctaView,
-            TriadSubMenuView subMenuView = null, TriadCommunityView communityView = null)
+            TriadSubMenuView subMenuView = null, TriadCommunityView communityView = null,
+            TriadBottomNavigationView bottomNavigationView = null)
         {
             header = headerView; playerStatus = playerView; heroArea = heroView; storyBanner = storyView;
-            mainCta = ctaView; subMenu = subMenuView; community = communityView;
+            mainCta = ctaView; subMenu = subMenuView; community = communityView; bottomNavigation = bottomNavigationView;
         }
 
         private void Awake()
@@ -43,6 +45,7 @@ namespace TRIAD.UI
                 community.CommunityPressed += RequestCommunity;
                 community.CopyCodePressed += CopyPlayerCode;
             }
+            if (bottomNavigation != null) bottomNavigation.RoutePressed += RequestRoute;
             ApplySnapshot(snapshot);
         }
 
@@ -61,6 +64,7 @@ namespace TRIAD.UI
                 community.CommunityPressed -= RequestCommunity;
                 community.CopyCodePressed -= CopyPlayerCode;
             }
+            if (bottomNavigation != null) bottomNavigation.RoutePressed -= RequestRoute;
         }
 
         public void ApplySnapshot(TriadHomeSnapshot value)
@@ -72,6 +76,7 @@ namespace TRIAD.UI
             storyBanner?.Bind(snapshot.storyKind, snapshot.clearedStoryStages, snapshot.totalStoryStages, snapshot.nextStoryStage, snapshot.nextStoryTitle, snapshot.StoryRatio);
             subMenu?.SetGachaNew(snapshot.hasNewGacha);
             community?.Bind(snapshot.playerCode);
+            bottomNavigation?.SetSelected(TriadHomeRoute.Home);
         }
 
         public void RequestBattle() => RequestRoute(TriadHomeRoute.Battle);
@@ -93,6 +98,7 @@ namespace TRIAD.UI
             mainCta?.SetInteractable(false);
             subMenu?.SetInteractable(false);
             community?.SetInteractable(false);
+            bottomNavigation?.SetInteractable(false);
             NavigationRequested?.Invoke(route);
         }
         public void CompleteNavigation()
@@ -101,6 +107,7 @@ namespace TRIAD.UI
             mainCta?.SetInteractable(true);
             subMenu?.SetInteractable(true);
             community?.SetInteractable(true);
+            bottomNavigation?.SetInteractable(true);
         }
         public bool TryBack() => navigationGate.TryBackFromHome();
     }
