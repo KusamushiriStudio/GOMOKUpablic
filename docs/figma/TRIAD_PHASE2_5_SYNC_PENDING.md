@@ -4,6 +4,8 @@
 
 2026-09-20時点で、Figma StarterのMCP操作回数上限へ到達したため、Phase 2–5のFigma書き込みだけ保留している。Professionalへの自動移行や課金は行っていない。
 
+接続確認値：tier=`starter`、seat=`View`、role=`admin`。現在の直接原因はStarterのMCP操作回数上限であり、枠の解除後は書き込み前にView seatで編集可能かも実測確認する。
+
 ## 無料版で完成済み
 
 - Design System基礎トークン

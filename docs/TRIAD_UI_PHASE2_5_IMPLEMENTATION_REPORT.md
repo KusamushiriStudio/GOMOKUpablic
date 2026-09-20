@@ -70,4 +70,5 @@ YES。以下を生成・統合した。
 
 - Unity実装・データ接続・操作保護・実表示確認：完了
 - Figma Phase 2〜5同期：無料MCP枠の上限解除待ち
+- Figma接続状態：Starter / View seat / admin。枠解除後に編集可否を実測する
 - Figma Professional契約：未実施、判断保留
