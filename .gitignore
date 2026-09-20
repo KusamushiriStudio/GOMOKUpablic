@@ -4,6 +4,7 @@
 /UserSettings/
 /obj/
 /Build/
+/Artifacts/
 *.blend1
 __pycache__/
 *.pyc

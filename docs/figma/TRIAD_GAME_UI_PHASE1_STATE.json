@@ -1,0 +1,49 @@
+{
+  "fileKey": "Gd3ERxkz7aVNrEw60JYHkl",
+  "fileUrl": "https://www.figma.com/design/Gd3ERxkz7aVNrEw60JYHkl",
+  "plan": "Starter",
+  "scope": "Home Phase 1 Header only",
+  "pages": {
+    "designSystem": "0:1",
+    "home": "3:2",
+    "components": "3:3"
+  },
+  "foundationsFrame": "2:49",
+  "topHeader": {
+    "documentationFrame": "4:2",
+    "component": "4:5",
+    "size": {
+      "width": 366,
+      "height": 45
+    },
+    "properties": {
+      "currency": "Currency#4:0",
+      "unread": "Unread#4:1"
+    }
+  },
+  "homeScreen": {
+    "frame": "7:2",
+    "headerInstance": "7:3",
+    "referenceResolution": "390x844",
+    "position": {
+      "x": 12,
+      "y": 47
+    }
+  },
+  "collections": {
+    "primitives": "VariableCollectionId:2:2",
+    "semanticColors": "VariableCollectionId:2:3",
+    "dimensions": "VariableCollectionId:2:4",
+    "typography": "VariableCollectionId:2:5"
+  },
+  "status": {
+    "foundationsValidated": true,
+    "componentCreated": true,
+    "homeHeaderPlaced": true,
+    "unityImplemented": true,
+    "unityCompileErrors": 0,
+    "editModeTests": "144/144 passed",
+    "playModeTests": "1/1 passed",
+    "screenshot": "Artifacts/UI/HomePhase1Header-Player.png"
+  }
+}
