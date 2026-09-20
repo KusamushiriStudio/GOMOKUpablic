@@ -5,6 +5,8 @@
 /obj/
 /Build/
 /Artifacts/
+/.codex-tmp/
+/Packages/app.rive.rive-unity/
 *.blend1
 __pycache__/
 *.pyc

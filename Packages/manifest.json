@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "app.rive.rive-unity": "https://github.com/rive-app/rive-unity.git?path=package#v0.4.3",
     "com.unity.render-pipelines.universal": "17.3.0",
     "com.unity.test-framework": "1.4.6",
     "com.unity.modules.ai": "1.0.0",
