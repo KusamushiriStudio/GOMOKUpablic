@@ -10,12 +10,14 @@
 - Home Phase 1 Header
 - HeaderのUnity uGUI実装と実表示確認
 
-## Unityへ実装するPhase 2–5
+## Unityへ実装済みのPhase 2–5
 
 - Player Status：アイコン、名前、Lv、EXP、段位、称号
 - Hero Area：背景、ヒバナ表示、キャラクター情報、詳細・衣装ショートカット
 - Story Banner：新章・告知・通常の表示契約、物語進捗、カルーセル表示
 - Main CTA：対戦・物語、通常・押下・無効状態、二重タップ防止、戻る規則
+
+Unity EditMode 144/144、PlayMode 1/1、Windows Player Build、390 × 844実表示まで確認済み。実画面は`Artifacts/UI/HomePhase5-Player.png`に保存した。
 
 ## 同期再開時の配置仕様
 

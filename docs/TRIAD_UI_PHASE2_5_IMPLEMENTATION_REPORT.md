@@ -33,14 +33,28 @@
 
 ## 検証結果
 
+- Unity Compile Error：0
 - Runtime C#静的コンパイル：エラー0
 - Editor Builder C#静的コンパイル：エラー0
+- Unity EditMode：144/144成功
+- Unity PlayMode：1/1成功（RenderTextureを使うためGPU有効バッチで確認）
 - Web既存回帰テスト：102/102成功
-- Unity自動生成・実表示・スクリーンショット：未完了
+- Windows Player Build：成功（Unity 6000.3.24f1）
+- 390 × 844実表示：成功
+- スクリーンショット：`Artifacts/UI/HomePhase5-Player.png`
+- 目視確認：文字欠け、部品の重なり、画面外表示なし
 
-## 未完了理由
+## Unityへの反映
 
-前日から残っている画面なしUnityプロセスがライセンスサービスを保持しており、新しいUnityバッチがライセンス初期化で停止する。対象プロセスの強制終了は、未保存作業の可能性を完全には排除できないため自動実行していない。
+YES。以下を生成・統合した。
+
+- `HomePlayerStatus.prefab`
+- `HomeHeroArea.prefab`
+- `HomeStoryBanner.prefab`
+- `HomeMainCta.prefab`
+- `HomePhase5.unity`
+
+画面下部の空き領域は、未着手のPhase 6〜8を配置するために意図して確保している。
 
 ## 既存機能への影響
 
@@ -50,4 +64,10 @@
 
 ## 現時点の課金判断
 
-判断保留。Figmaの制限は実際に到達したが、Unity側の検証完了前であり、まだ課金判断に必要な比較材料が不足している。
+判断保留。FigmaのMCP操作回数上限には実際に到達したが、課金は行っていない。Unity側のPhase 2〜5実装は無料ツールの範囲で完了したため、Figma同期は無料枠リセット後に同じDesign Systemへ反映する。
+
+## 番号33時点の残件
+
+- Unity実装・データ接続・操作保護・実表示確認：完了
+- Figma Phase 2〜5同期：無料MCP枠の上限解除待ち
+- Figma Professional契約：未実施、判断保留

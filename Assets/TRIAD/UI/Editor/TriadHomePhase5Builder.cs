@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -40,6 +41,24 @@ namespace TRIAD.UI.Editor
         }
 
         public static void BuildAndVerify() => Build();
+
+        public static void BuildVerifyAndBuildPreviewPlayer()
+        {
+            Build();
+            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
+            string output = Path.Combine(projectRoot, "Artifacts", "UI", "Player", "TRIADHomePhase5.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(output) ?? projectRoot);
+            BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            {
+                scenes = new[] { ScenePath },
+                locationPathName = output,
+                target = BuildTarget.StandaloneWindows64,
+                options = BuildOptions.None
+            });
+            if (report.summary.result != BuildResult.Succeeded)
+                throw new InvalidOperationException("Phase 5 preview build failed: " + report.summary.result);
+            Debug.Log($"[TRIAD UI PHASE5] PLAYER PASS: {output}; Size={report.summary.totalSize}");
+        }
 
         private static void BuildPlayerStatus()
         {
