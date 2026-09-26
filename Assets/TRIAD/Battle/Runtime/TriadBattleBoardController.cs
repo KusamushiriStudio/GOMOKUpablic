@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using TRIAD.Core.Board;
+using TRIAD.Core.Common;
 using TRIAD.Core.Rules;
+using TRIAD.Core.Skills;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
@@ -28,12 +30,17 @@ namespace TRIAD.Battle
         private readonly List<GameObject> spawnedStones = new();
         private readonly Material[] seatMaterials = new Material[4];
         private MatchState state;
+        private string selectedSkillId;
+        private BoardCoordinate? selectedSource;
 
         public MatchState State => state;
         public Camera BoardCamera => boardCamera;
         public Mesh StoneMesh => stoneMesh;
         public int SpawnedStoneCount => spawnedStones.Count;
+        public string SelectedSkillId => selectedSkillId;
+        public BoardCoordinate? SelectedSource => selectedSource;
         public event Action<MatchState> StateChanged;
+        public event Action<string> SkillSelectionChanged;
 
         public void Configure(Camera camera, Mesh mesh, Transform stones,
             Text turn, Text energy, Text status, Button back, Button reset, string homeScene)
@@ -83,7 +90,24 @@ namespace TRIAD.Battle
                 return;
 
             int actingSeat = state.TurnSeat;
-            ActionResult result = RuleEngine.Apply(state, MatchAction.Place(actingSeat, coordinate));
+            MatchAction action;
+            if (string.IsNullOrEmpty(selectedSkillId))
+            {
+                action = MatchAction.Place(actingSeat, coordinate);
+            }
+            else if ((selectedSkillId == StableIds.Windwalk || selectedSkillId == StableIds.Pull) && !selectedSource.HasValue)
+            {
+                selectedSource = coordinate;
+                if (statusLabel != null) statusLabel.text = "移動先の交点を選択";
+                SkillSelectionChanged?.Invoke(selectedSkillId);
+                return;
+            }
+            else
+            {
+                action = MatchAction.Skill(actingSeat, selectedSkillId, coordinate, selectedSource);
+            }
+
+            ActionResult result = RuleEngine.Apply(state, action);
             if (!result.Success)
             {
                 if (statusLabel != null) statusLabel.text = ErrorLabel(result.Error);
@@ -91,9 +115,51 @@ namespace TRIAD.Battle
             }
 
             state = result.State;
-            SpawnStone(coordinate, actingSeat);
+            if (action.Kind == MatchActionKind.Place) SpawnStone(coordinate, actingSeat);
+            else RebuildStonesFromState();
+            string completedSkill = selectedSkillId;
+            ClearSkillSelection();
             RefreshHud();
+            if (!state.IsFinished && !string.IsNullOrEmpty(completedSkill) && statusLabel != null)
+                statusLabel.text = SkillLabel(completedSkill) + "を発動";
             StateChanged?.Invoke(state);
+        }
+
+        public void SelectSkill(string skillId)
+        {
+            if (state == null || state.IsFinished) return;
+            if (selectedSkillId == skillId)
+            {
+                ClearSkillSelection();
+                if (statusLabel != null) statusLabel.text = "交点をタップして碁石を置く";
+                return;
+            }
+            SkillDefinition definition;
+            try { definition = SkillCatalog.Get(state.Ruleset.Id, skillId); }
+            catch (ArgumentException) { return; }
+            if (state.Energy[state.TurnSeat] < definition.Cost)
+            {
+                if (statusLabel != null) statusLabel.text = "気力が不足しています";
+                return;
+            }
+            if (state.GetSkillUseCount(state.TurnSeat, skillId) >= definition.Uses)
+            {
+                if (statusLabel != null) statusLabel.text = "このスキルは使用上限です";
+                return;
+            }
+            selectedSkillId = skillId;
+            selectedSource = null;
+            if (statusLabel != null)
+                statusLabel.text = skillId == StableIds.Windwalk || skillId == StableIds.Pull
+                    ? SkillLabel(skillId) + "：移動元を選択"
+                    : SkillLabel(skillId) + "：対象を選択";
+            SkillSelectionChanged?.Invoke(selectedSkillId);
+        }
+
+        public void CancelSkillSelection()
+        {
+            ClearSkillSelection();
+            if (statusLabel != null) statusLabel.text = "交点をタップして碁石を置く";
         }
 
         public void StartMatch()
@@ -102,12 +168,13 @@ namespace TRIAD.Battle
                 if (spawnedStones[i] != null) Destroy(spawnedStones[i]);
             spawnedStones.Clear();
             state = MatchState.Create(RulesetCatalog.PvpBalanceV2Id);
+            ClearSkillSelection();
             if (statusLabel != null) statusLabel.text = "交点をタップして碁石を置く";
             RefreshHud();
             StateChanged?.Invoke(state);
         }
 
-        private void SpawnStone(BoardCoordinate coordinate, int seat)
+        private void SpawnStone(BoardCoordinate coordinate, int seat, bool animate = true)
         {
             GameObject stone = new GameObject(
                 $"Stone_S{seat}_{coordinate.X}_{coordinate.Y}", typeof(MeshFilter), typeof(MeshRenderer));
@@ -117,8 +184,29 @@ namespace TRIAD.Battle
             stone.transform.localScale = Vector3.one;
             stone.GetComponent<MeshFilter>().sharedMesh = stoneMesh;
             stone.GetComponent<MeshRenderer>().sharedMaterial = seatMaterials[seat];
-            stone.AddComponent<TriadPlacedStoneMotion>();
+            if (animate) stone.AddComponent<TriadPlacedStoneMotion>();
             spawnedStones.Add(stone);
+        }
+
+        private void RebuildStonesFromState()
+        {
+            for (int i = spawnedStones.Count - 1; i >= 0; i--)
+                if (spawnedStones[i] != null) Destroy(spawnedStones[i]);
+            spawnedStones.Clear();
+            for (int row = 0; row < state.Board.Height; row++)
+            for (int column = 0; column < state.Board.Width; column++)
+            {
+                var coordinate = new BoardCoordinate(column, row);
+                int owner = state.Board.GetOwner(coordinate);
+                if (owner != 0) SpawnStone(coordinate, owner, false);
+            }
+        }
+
+        private void ClearSkillSelection()
+        {
+            selectedSkillId = null;
+            selectedSource = null;
+            SkillSelectionChanged?.Invoke(null);
         }
 
         private void RefreshHud()
@@ -161,7 +249,28 @@ namespace TRIAD.Battle
                 "occupied" => "その交点にはすでに碁石があります",
                 "not_your_turn" => "現在の手番ではありません",
                 "match_finished" => "対局は終了しています",
+                "insufficient_energy" => "気力が不足しています",
+                "uses_exceeded" => "このスキルは使用上限です",
+                "not_own_stone" => "自分の碁石を選んでください",
+                "not_enemy_stone" => "相手の碁石を選んでください",
+                "not_adjacent" => "隣接する交点を選んでください",
+                "guarded" => "守護された碁石です",
+                "frozen" => "凍結中の交点です",
                 _ => "その位置には置けません"
+            };
+        }
+
+        private static string SkillLabel(string id)
+        {
+            return id switch
+            {
+                StableIds.Spark => "火花",
+                StableIds.Ward => "守護",
+                StableIds.Windwalk => "疾風",
+                StableIds.Freeze => "凍結",
+                StableIds.Pull => "引寄",
+                StableIds.Transmute => "変換",
+                _ => "スキル"
             };
         }
     }
