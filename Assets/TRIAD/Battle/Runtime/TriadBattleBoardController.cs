@@ -275,7 +275,7 @@ namespace TRIAD.Battle
                 statusLabel.text = $"席{state.WinnerSeat}の五連が完成";
         }
 
-        private void ReturnHome() => SceneManager.LoadScene(homeSceneName, LoadSceneMode.Single);
+        public void ReturnHome() => SceneManager.LoadScene(homeSceneName, LoadSceneMode.Single);
 
         private void CreateMaterials()
         {
