@@ -20,6 +20,7 @@ namespace TRIAD.Battle
         [SerializeField] private Camera boardCamera;
         [SerializeField] private Mesh stoneMesh;
         [SerializeField] private Transform stoneRoot;
+        [SerializeField] private Transform effectRoot;
         [SerializeField] private Text turnLabel;
         [SerializeField] private Text energyLabel;
         [SerializeField] private Text statusLabel;
@@ -28,7 +29,10 @@ namespace TRIAD.Battle
         [SerializeField] private string homeSceneName = "HomePhase34";
 
         private readonly List<GameObject> spawnedStones = new();
+        private readonly List<GameObject> spawnedEffects = new();
         private readonly Material[] seatMaterials = new Material[4];
+        private Material wardMaterial;
+        private Material freezeMaterial;
         private MatchState state;
         private string selectedSkillId;
         private BoardCoordinate? selectedSource;
@@ -37,6 +41,7 @@ namespace TRIAD.Battle
         public Camera BoardCamera => boardCamera;
         public Mesh StoneMesh => stoneMesh;
         public int SpawnedStoneCount => spawnedStones.Count;
+        public int SpawnedEffectCount => spawnedEffects.Count;
         public string SelectedSkillId => selectedSkillId;
         public BoardCoordinate? SelectedSource => selectedSource;
         public event Action<MatchState> StateChanged;
@@ -57,6 +62,7 @@ namespace TRIAD.Battle
         }
 
         public void SetHomeSceneName(string sceneName) => homeSceneName = sceneName;
+        public void SetEffectRoot(Transform effects) => effectRoot = effects;
 
         private void Awake()
         {
@@ -72,6 +78,8 @@ namespace TRIAD.Battle
             if (resetButton != null) resetButton.onClick.RemoveListener(StartMatch);
             for (int seat = 1; seat <= 3; seat++)
                 if (seatMaterials[seat] != null) Destroy(seatMaterials[seat]);
+            if (wardMaterial != null) Destroy(wardMaterial);
+            if (freezeMaterial != null) Destroy(freezeMaterial);
         }
 
         public void OnPointerClick(PointerEventData eventData)
@@ -117,6 +125,7 @@ namespace TRIAD.Battle
             state = result.State;
             if (action.Kind == MatchActionKind.Place) SpawnStone(coordinate, actingSeat);
             else RebuildStonesFromState();
+            RebuildBoardEffects();
             string completedSkill = selectedSkillId;
             ClearSkillSelection();
             RefreshHud();
@@ -167,6 +176,7 @@ namespace TRIAD.Battle
             for (int i = spawnedStones.Count - 1; i >= 0; i--)
                 if (spawnedStones[i] != null) Destroy(spawnedStones[i]);
             spawnedStones.Clear();
+            ClearBoardEffects();
             state = MatchState.Create(RulesetCatalog.PvpBalanceV2Id);
             ClearSkillSelection();
             if (statusLabel != null) statusLabel.text = "交点をタップして碁石を置く";
@@ -202,6 +212,51 @@ namespace TRIAD.Battle
             }
         }
 
+        private void RebuildBoardEffects()
+        {
+            ClearBoardEffects();
+            if (state == null || effectRoot == null) return;
+
+            foreach (int index in state.WardedIndices)
+            {
+                BoardCoordinate coordinate = BoardCoordinate.FromIndex(index, state.Board.Width, state.Board.Height);
+                SpawnBoardEffect(coordinate, true);
+            }
+
+            foreach (KeyValuePair<int, int> pair in state.FrozenUntilPly)
+            {
+                if (state.Ply >= pair.Value) continue;
+                BoardCoordinate coordinate = BoardCoordinate.FromIndex(pair.Key, state.Board.Width, state.Board.Height);
+                SpawnBoardEffect(coordinate, false);
+            }
+        }
+
+        private void SpawnBoardEffect(BoardCoordinate coordinate, bool ward)
+        {
+            PrimitiveType primitive = ward ? PrimitiveType.Cylinder : PrimitiveType.Cube;
+            GameObject marker = GameObject.CreatePrimitive(primitive);
+            marker.name = $"{(ward ? "Ward" : "Freeze")}_{coordinate.X}_{coordinate.Y}";
+            marker.transform.SetParent(effectRoot, false);
+            Vector3 position = PositionFor(coordinate);
+            marker.transform.localPosition = new Vector3(position.x, BoardSurfaceY + (ward ? .0015f : .004f), position.z);
+            marker.transform.localRotation = ward ? Quaternion.identity : Quaternion.Euler(0f, 45f, 0f);
+            marker.transform.localScale = ward
+                ? new Vector3(.034f, .0014f, .034f)
+                : new Vector3(.025f, .0035f, .025f);
+            Collider markerCollider = marker.GetComponent<Collider>();
+            if (markerCollider != null) Destroy(markerCollider);
+            marker.GetComponent<MeshRenderer>().sharedMaterial = ward ? wardMaterial : freezeMaterial;
+            marker.AddComponent<TriadBattleEffectPulse>().Configure(ward ? .08f : .16f, ward ? 22f : -34f);
+            spawnedEffects.Add(marker);
+        }
+
+        private void ClearBoardEffects()
+        {
+            for (int i = spawnedEffects.Count - 1; i >= 0; i--)
+                if (spawnedEffects[i] != null) Destroy(spawnedEffects[i]);
+            spawnedEffects.Clear();
+        }
+
         private void ClearSkillSelection()
         {
             selectedSkillId = null;
@@ -228,6 +283,19 @@ namespace TRIAD.Battle
             seatMaterials[1] = NewMaterial(shader, new Color(.025f, .028f, .035f, 1f), .78f);
             seatMaterials[2] = NewMaterial(shader, new Color(.94f, .90f, .78f, 1f), .62f);
             seatMaterials[3] = NewMaterial(shader, new Color(.62f, .035f, .028f, 1f), .70f);
+            wardMaterial = NewEffectMaterial(shader, new Color(1f, .62f, .08f, .88f), new Color(1f, .30f, .02f, 1f));
+            freezeMaterial = NewEffectMaterial(shader, new Color(.18f, .72f, 1f, .82f), new Color(.02f, .40f, 1f, 1f));
+        }
+
+        private static Material NewEffectMaterial(Shader shader, Color color, Color emission)
+        {
+            Material material = NewMaterial(shader, color, .74f);
+            if (material.HasProperty("_EmissionColor"))
+            {
+                material.EnableKeyword("_EMISSION");
+                material.SetColor("_EmissionColor", emission * 1.45f);
+            }
+            return material;
         }
 
         private static Material NewMaterial(Shader shader, Color color, float smoothness)
