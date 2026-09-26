@@ -35,6 +35,7 @@ namespace TRIAD.Battle
         private Material freezeMaterial;
         private MatchState state;
         private bool inputLocked;
+        private int automatedSeatMask;
         private string selectedSkillId;
         private BoardCoordinate? selectedSource;
 
@@ -45,6 +46,7 @@ namespace TRIAD.Battle
         public int SpawnedEffectCount => spawnedEffects.Count;
         public string SelectedSkillId => selectedSkillId;
         public bool IsInputLocked => inputLocked;
+        public int AutomatedSeatMask => automatedSeatMask;
         public BoardCoordinate? SelectedSource => selectedSource;
         public event Action<MatchState> StateChanged;
         public event Action<string> SkillSelectionChanged;
@@ -67,6 +69,7 @@ namespace TRIAD.Battle
         public void SetHomeSceneName(string sceneName) => homeSceneName = sceneName;
         public void SetEffectRoot(Transform effects) => effectRoot = effects;
         public void SetInputLocked(bool locked) => inputLocked = locked;
+        public void SetAutomatedSeats(int seatMask) => automatedSeatMask = seatMask;
 
         private void Awake()
         {
@@ -88,7 +91,7 @@ namespace TRIAD.Battle
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            if (inputLocked || state == null || state.IsFinished || boardCamera == null) return;
+            if (inputLocked || state == null || state.IsFinished || boardCamera == null || IsAutomatedSeat(state.TurnSeat)) return;
             Ray ray = boardCamera.ScreenPointToRay(eventData.position);
             Plane boardPlane = new Plane(Vector3.up, new Vector3(0f, BoardSurfaceY, 0f));
             if (!boardPlane.Raycast(ray, out float enter)) return;
@@ -119,29 +122,38 @@ namespace TRIAD.Battle
                 action = MatchAction.Skill(actingSeat, selectedSkillId, coordinate, selectedSource);
             }
 
+            TryApplyAction(action);
+        }
+
+        public bool TryApplyAction(MatchAction action)
+        {
+            if (action == null || state == null || state.IsFinished) return false;
+            int actingSeat = action.Seat;
             ActionResult result = RuleEngine.Apply(state, action);
             if (!result.Success)
             {
                 if (statusLabel != null) statusLabel.text = ErrorLabel(result.Error);
-                return;
+                return false;
             }
 
             state = result.State;
-            if (action.Kind == MatchActionKind.Place) SpawnStone(coordinate, actingSeat);
+            if (action.Kind == MatchActionKind.Place || action.Kind == MatchActionKind.Extra)
+                SpawnStone(action.Target, actingSeat);
             else RebuildStonesFromState();
             RebuildBoardEffects();
-            string completedSkill = selectedSkillId;
+            string completedSkill = action.SkillId;
             ClearSkillSelection();
             RefreshHud();
             if (!state.IsFinished && !string.IsNullOrEmpty(completedSkill) && statusLabel != null)
                 statusLabel.text = SkillLabel(completedSkill) + "を発動";
             StateChanged?.Invoke(state);
             ActionResolved?.Invoke(ActionLabel(action, actingSeat));
+            return true;
         }
 
         public void SelectSkill(string skillId)
         {
-            if (inputLocked || state == null || state.IsFinished) return;
+            if (inputLocked || state == null || state.IsFinished || IsAutomatedSeat(state.TurnSeat)) return;
             if (selectedSkillId == skillId)
             {
                 ClearSkillSelection();
@@ -270,6 +282,8 @@ namespace TRIAD.Battle
             selectedSource = null;
             SkillSelectionChanged?.Invoke(null);
         }
+
+        private bool IsAutomatedSeat(int seat) => (automatedSeatMask & (1 << seat)) != 0;
 
         private void RefreshHud()
         {
