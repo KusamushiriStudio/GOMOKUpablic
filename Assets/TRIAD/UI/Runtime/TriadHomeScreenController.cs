@@ -20,6 +20,7 @@ namespace TRIAD.UI
         public TriadHomeSnapshot Snapshot => snapshot;
         public bool RouteBusy => navigationGate.Busy;
         public event Action<TriadHomeRoute> NavigationRequested;
+        public event Action NavigationCompleted;
 
         public void Configure(TriadHomeHeaderView headerView, TriadPlayerStatusView playerView,
             TriadHeroAreaView heroView, TriadStoryBannerView storyView, TriadMainCtaView ctaView,
@@ -108,6 +109,7 @@ namespace TRIAD.UI
             subMenu?.SetInteractable(true);
             community?.SetInteractable(true);
             bottomNavigation?.SetInteractable(true);
+            NavigationCompleted?.Invoke();
         }
         public bool TryBack() => navigationGate.TryBackFromHome();
     }
