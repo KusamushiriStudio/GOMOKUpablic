@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TRIAD.Core.Board;
 using TRIAD.Core.Rules;
@@ -32,6 +33,7 @@ namespace TRIAD.Battle
         public Camera BoardCamera => boardCamera;
         public Mesh StoneMesh => stoneMesh;
         public int SpawnedStoneCount => spawnedStones.Count;
+        public event Action<MatchState> StateChanged;
 
         public void Configure(Camera camera, Mesh mesh, Transform stones,
             Text turn, Text energy, Text status, Button back, Button reset, string homeScene)
@@ -46,6 +48,8 @@ namespace TRIAD.Battle
             resetButton = reset;
             homeSceneName = homeScene;
         }
+
+        public void SetHomeSceneName(string sceneName) => homeSceneName = sceneName;
 
         private void Awake()
         {
@@ -89,6 +93,7 @@ namespace TRIAD.Battle
             state = result.State;
             SpawnStone(coordinate, actingSeat);
             RefreshHud();
+            StateChanged?.Invoke(state);
         }
 
         public void StartMatch()
@@ -99,6 +104,7 @@ namespace TRIAD.Battle
             state = MatchState.Create(RulesetCatalog.PvpBalanceV2Id);
             if (statusLabel != null) statusLabel.text = "交点をタップして碁石を置く";
             RefreshHud();
+            StateChanged?.Invoke(state);
         }
 
         private void SpawnStone(BoardCoordinate coordinate, int seat)
@@ -111,6 +117,7 @@ namespace TRIAD.Battle
             stone.transform.localScale = Vector3.one;
             stone.GetComponent<MeshFilter>().sharedMesh = stoneMesh;
             stone.GetComponent<MeshRenderer>().sharedMaterial = seatMaterials[seat];
+            stone.AddComponent<TriadPlacedStoneMotion>();
             spawnedStones.Add(stone);
         }
 
