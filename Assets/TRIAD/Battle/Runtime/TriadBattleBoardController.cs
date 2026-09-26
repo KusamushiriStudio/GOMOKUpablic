@@ -34,6 +34,7 @@ namespace TRIAD.Battle
         private Material wardMaterial;
         private Material freezeMaterial;
         private MatchState state;
+        private bool inputLocked;
         private string selectedSkillId;
         private BoardCoordinate? selectedSource;
 
@@ -43,6 +44,7 @@ namespace TRIAD.Battle
         public int SpawnedStoneCount => spawnedStones.Count;
         public int SpawnedEffectCount => spawnedEffects.Count;
         public string SelectedSkillId => selectedSkillId;
+        public bool IsInputLocked => inputLocked;
         public BoardCoordinate? SelectedSource => selectedSource;
         public event Action<MatchState> StateChanged;
         public event Action<string> SkillSelectionChanged;
@@ -64,6 +66,7 @@ namespace TRIAD.Battle
 
         public void SetHomeSceneName(string sceneName) => homeSceneName = sceneName;
         public void SetEffectRoot(Transform effects) => effectRoot = effects;
+        public void SetInputLocked(bool locked) => inputLocked = locked;
 
         private void Awake()
         {
@@ -85,7 +88,7 @@ namespace TRIAD.Battle
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            if (state == null || state.IsFinished || boardCamera == null) return;
+            if (inputLocked || state == null || state.IsFinished || boardCamera == null) return;
             Ray ray = boardCamera.ScreenPointToRay(eventData.position);
             Plane boardPlane = new Plane(Vector3.up, new Vector3(0f, BoardSurfaceY, 0f));
             if (!boardPlane.Raycast(ray, out float enter)) return;
@@ -138,7 +141,7 @@ namespace TRIAD.Battle
 
         public void SelectSkill(string skillId)
         {
-            if (state == null || state.IsFinished) return;
+            if (inputLocked || state == null || state.IsFinished) return;
             if (selectedSkillId == skillId)
             {
                 ClearSkillSelection();
@@ -179,6 +182,7 @@ namespace TRIAD.Battle
                 if (spawnedStones[i] != null) Destroy(spawnedStones[i]);
             spawnedStones.Clear();
             ClearBoardEffects();
+            inputLocked = false;
             state = MatchState.Create(RulesetCatalog.PvpBalanceV2Id);
             ClearSkillSelection();
             if (statusLabel != null) statusLabel.text = "交点をタップして碁石を置く";
