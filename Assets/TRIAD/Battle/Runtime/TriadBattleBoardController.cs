@@ -46,6 +46,7 @@ namespace TRIAD.Battle
         public BoardCoordinate? SelectedSource => selectedSource;
         public event Action<MatchState> StateChanged;
         public event Action<string> SkillSelectionChanged;
+        public event Action<string> ActionResolved;
 
         public void Configure(Camera camera, Mesh mesh, Transform stones,
             Text turn, Text energy, Text status, Button back, Button reset, string homeScene)
@@ -132,6 +133,7 @@ namespace TRIAD.Battle
             if (!state.IsFinished && !string.IsNullOrEmpty(completedSkill) && statusLabel != null)
                 statusLabel.text = SkillLabel(completedSkill) + "を発動";
             StateChanged?.Invoke(state);
+            ActionResolved?.Invoke(ActionLabel(action, actingSeat));
         }
 
         public void SelectSkill(string skillId)
@@ -182,6 +184,7 @@ namespace TRIAD.Battle
             if (statusLabel != null) statusLabel.text = "交点をタップして碁石を置く";
             RefreshHud();
             StateChanged?.Invoke(state);
+            ActionResolved?.Invoke(null);
         }
 
         private void SpawnStone(BoardCoordinate coordinate, int seat, bool animate = true)
@@ -341,5 +344,19 @@ namespace TRIAD.Battle
                 _ => "スキル"
             };
         }
+
+        private static string ActionLabel(MatchAction action, int seat)
+        {
+            string actor = seat switch { 1 => "ヒバナ", 2 => "ユキネ", 3 => "クオン", _ => $"席{seat}" };
+            if (action.Kind == MatchActionKind.Place)
+                return $"{actor}  着手 {CoordinateLabel(action.Target)}";
+            string target = action.Source.HasValue
+                ? $"{CoordinateLabel(action.Source.Value)}→{CoordinateLabel(action.Target)}"
+                : CoordinateLabel(action.Target);
+            return $"{actor}  {SkillLabel(action.SkillId)} {target}";
+        }
+
+        private static string CoordinateLabel(BoardCoordinate coordinate) =>
+            $"{(char)('A' + coordinate.X)}{coordinate.Y + 1}";
     }
 }
