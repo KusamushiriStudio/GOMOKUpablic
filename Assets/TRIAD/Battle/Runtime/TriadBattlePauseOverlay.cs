@@ -47,7 +47,7 @@ namespace TRIAD.Battle
             if (controller != null) controller.StateChanged -= OnStateChanged;
         }
 
-        private void Open()
+        public void Open()
         {
             if (controller == null || controller.State == null || controller.State.IsFinished) return;
             controller.SetInputLocked(true);
@@ -55,7 +55,7 @@ namespace TRIAD.Battle
             SetVisible(true);
         }
 
-        private void Close()
+        public void Close()
         {
             controller?.SetInputLocked(false);
             SetVisible(false);
