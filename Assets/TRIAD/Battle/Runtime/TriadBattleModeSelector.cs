@@ -8,6 +8,7 @@ namespace TRIAD.Battle
     {
         [SerializeField] private TriadBattleBoardController controller;
         [SerializeField] private TriadBattleCpuDriver cpuDriver;
+        [SerializeField] private TriadBattleSessionContext sessionContext;
         [SerializeField] private CanvasGroup canvasGroup;
         [SerializeField] private Text modeBadgeLabel;
         [SerializeField] private Button soloButton;
@@ -18,7 +19,8 @@ namespace TRIAD.Battle
         public bool HasSelection { get; private set; }
 
         public void Configure(TriadBattleBoardController battleController, TriadBattleCpuDriver driver,
-            CanvasGroup group, Text badgeLabel, Button solo, Button local, Button home)
+            CanvasGroup group, Text badgeLabel, Button solo, Button local, Button home,
+            TriadBattleSessionContext session = null)
         {
             controller = battleController;
             cpuDriver = driver;
@@ -27,7 +29,10 @@ namespace TRIAD.Battle
             soloButton = solo;
             localButton = local;
             homeButton = home;
+            sessionContext = session;
         }
+
+        public void SetSessionContext(TriadBattleSessionContext session) => sessionContext = session;
 
         private void Awake()
         {
@@ -45,12 +50,13 @@ namespace TRIAD.Battle
             if (homeButton != null) homeButton.onClick.RemoveListener(ReturnHome);
         }
 
-        private void SelectSolo() => ApplyMode((1 << 2) | (1 << 3), "SOLO  CPU×2");
+        private void SelectSolo() => ApplyMode((1 << 2) | (1 << 3), "SOLO  CPU×2", TriadBattleSessionMode.Solo);
 
-        private void SelectLocal() => ApplyMode(0, "LOCAL  3人対戦");
+        private void SelectLocal() => ApplyMode(0, "LOCAL  3人対戦", TriadBattleSessionMode.Local);
 
-        private void ApplyMode(int cpuSeatMask, string label)
+        private void ApplyMode(int cpuSeatMask, string label, TriadBattleSessionMode mode)
         {
+            sessionContext?.BeginOffline(mode);
             cpuDriver?.SetMode(cpuSeatMask);
             if (modeBadgeLabel != null) modeBadgeLabel.text = label;
             HasSelection = true;
