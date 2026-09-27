@@ -55,6 +55,7 @@ namespace TRIAD.Battle
         public event Action<MatchAction> ActionCommitted;
         public event Action<BoardCoordinate> CoordinateTargeted;
         public event Action<string, BoardCoordinate?> InteractionRejected;
+        public event Action<WinningLine> WinningLineResolved;
 
         public void Configure(Camera camera, Mesh mesh, Transform stones,
             Text turn, Text energy, Text status, Button back, Button reset, string homeScene)
@@ -163,6 +164,7 @@ namespace TRIAD.Battle
             StateChanged?.Invoke(state);
             ActionResolved?.Invoke(ActionLabel(action, actingSeat));
             ActionCommitted?.Invoke(action);
+            WinningLineResolved?.Invoke(result.WinningLine);
             return true;
         }
 
@@ -217,6 +219,7 @@ namespace TRIAD.Battle
             StateChanged?.Invoke(state);
             ActionResolved?.Invoke(null);
             ActionCommitted?.Invoke(null);
+            WinningLineResolved?.Invoke(null);
         }
 
         private void SpawnStone(BoardCoordinate coordinate, int seat, bool animate = true)
