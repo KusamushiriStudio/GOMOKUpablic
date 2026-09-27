@@ -60,7 +60,7 @@ namespace TRIAD.Battle
                 : $"{SeatNames[seat]}の手番";
             if (animation != null) StopCoroutine(animation);
             animation = StartCoroutine(AnimateBanner());
-            if (audioSource != null && turnClip != null)
+            if (TriadBattlePreferences.AudioEnabled && audioSource != null && turnClip != null)
             {
                 audioSource.pitch = 1f + (seat - 2) * .045f;
                 audioSource.PlayOneShot(turnClip, .32f);
@@ -71,9 +71,10 @@ namespace TRIAD.Battle
         {
             if (canvasGroup == null || banner == null) yield break;
             Vector2 resting = banner.anchoredPosition;
-            Vector2 start = resting + new Vector2(42f, 0f);
+            bool reducedMotion = TriadBattlePreferences.ReducedMotion;
+            Vector2 start = reducedMotion ? resting : resting + new Vector2(42f, 0f);
             float elapsed = 0f;
-            const float enterDuration = .18f;
+            float enterDuration = reducedMotion ? .08f : .18f;
             while (elapsed < enterDuration)
             {
                 elapsed += Time.unscaledDeltaTime;
@@ -85,12 +86,13 @@ namespace TRIAD.Battle
             }
             banner.anchoredPosition = resting;
             canvasGroup.alpha = 1f;
-            yield return new WaitForSecondsRealtime(.85f);
+            yield return new WaitForSecondsRealtime(reducedMotion ? .72f : .85f);
             elapsed = 0f;
-            while (elapsed < .3f)
+            float exitDuration = reducedMotion ? .12f : .3f;
+            while (elapsed < exitDuration)
             {
                 elapsed += Time.unscaledDeltaTime;
-                canvasGroup.alpha = 1f - Mathf.Clamp01(elapsed / .3f);
+                canvasGroup.alpha = 1f - Mathf.Clamp01(elapsed / exitDuration);
                 yield return null;
             }
             canvasGroup.alpha = 0f;

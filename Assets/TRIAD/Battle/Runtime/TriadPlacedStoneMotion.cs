@@ -17,6 +17,11 @@ namespace TRIAD.Battle
         {
             finalScale = transform.localScale;
             finalPosition = transform.localPosition;
+            if (TriadBattlePreferences.ReducedMotion)
+            {
+                enabled = false;
+                return;
+            }
             transform.localScale = finalScale * initialScale;
             transform.localPosition = finalPosition + Vector3.up * dropHeight;
         }
