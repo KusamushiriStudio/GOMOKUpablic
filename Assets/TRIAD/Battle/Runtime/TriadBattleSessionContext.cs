@@ -45,6 +45,19 @@ namespace TRIAD.Battle
             Changed?.Invoke(this);
         }
 
+        public void RestoreOffline(TriadBattleSessionMode restoredMode, string restoredSessionId)
+        {
+            if (restoredMode != TriadBattleSessionMode.Solo && restoredMode != TriadBattleSessionMode.Local)
+                throw new ArgumentOutOfRangeException(nameof(restoredMode));
+            if (string.IsNullOrWhiteSpace(restoredSessionId))
+                throw new ArgumentException("A restored session requires an id.", nameof(restoredSessionId));
+            mode = restoredMode;
+            connectionState = TriadBattleConnectionState.Offline;
+            localSeat = 1;
+            sessionId = restoredSessionId;
+            Changed?.Invoke(this);
+        }
+
         public void PrepareOnline()
         {
             mode = TriadBattleSessionMode.Online;

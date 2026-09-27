@@ -54,6 +54,18 @@ namespace TRIAD.Battle
 
         private void SelectLocal() => ApplyMode(0, "LOCAL  3人対戦", TriadBattleSessionMode.Local);
 
+        public void ResumeOffline(TriadBattleSessionMode mode, string sessionId)
+        {
+            int cpuSeatMask = mode == TriadBattleSessionMode.Solo ? (1 << 2) | (1 << 3) : 0;
+            string label = mode == TriadBattleSessionMode.Solo ? "SOLO  CPU×2" : "LOCAL  3人対戦";
+            sessionContext?.RestoreOffline(mode, sessionId);
+            cpuDriver?.SetMode(cpuSeatMask);
+            if (modeBadgeLabel != null) modeBadgeLabel.text = label;
+            HasSelection = true;
+            SetVisible(false);
+            controller?.StartMatch();
+        }
+
         private void ApplyMode(int cpuSeatMask, string label, TriadBattleSessionMode mode)
         {
             sessionContext?.BeginOffline(mode);
