@@ -9,10 +9,10 @@ EditorBuildSettings:
     path: Assets/TRIADAssetTest/Scenes/AssetTestScene.unity
     guid: fc6e7c14fb3506042bdf7b26fb157fdb
   - enabled: 1
-    path: Assets/TRIAD/UI/Scenes/HomePhase61.unity
-    guid: 01e179e198217804aa595d4e80005e03
+    path: Assets/TRIAD/UI/Scenes/HomePhase62.unity
+    guid: 6b4f42cb2b9e2a846b1ff6a5bffab2f3
   - enabled: 1
-    path: Assets/TRIAD/Battle/Scenes/BattlePhase28.unity
-    guid: 9d10fa580519a8c4c99efeaf61783052
+    path: Assets/TRIAD/Battle/Scenes/BattlePhase29.unity
+    guid: 8f2b00a1074492a439d8cefd80780194
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

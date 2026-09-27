@@ -54,6 +54,7 @@ namespace TRIAD.Battle
         public event Action<string> ActionResolved;
         public event Action<MatchAction> ActionCommitted;
         public event Action<BoardCoordinate> CoordinateTargeted;
+        public event Action<string, BoardCoordinate?> InteractionRejected;
 
         public void Configure(Camera camera, Mesh mesh, Transform stones,
             Text turn, Text energy, Text status, Button back, Button reset, string homeScene)
@@ -102,10 +103,17 @@ namespace TRIAD.Battle
             int column = Mathf.RoundToInt((point.x + .20f) / GridSpacing);
             int row = Mathf.RoundToInt((point.z + .32f) / GridSpacing);
             var coordinate = new BoardCoordinate(column, row);
-            if (!coordinate.IsInside(BoardState.StandardWidth, BoardState.StandardHeight)) return;
+            if (!coordinate.IsInside(BoardState.StandardWidth, BoardState.StandardHeight))
+            {
+                InteractionRejected?.Invoke("盤面内の交点を選択してください", null);
+                return;
+            }
             Vector3 snapped = PositionFor(coordinate);
             if (Vector2.Distance(new Vector2(point.x, point.z), new Vector2(snapped.x, snapped.z)) > GridSpacing * .48f)
+            {
+                InteractionRejected?.Invoke("交点の中心を選択してください", coordinate);
                 return;
+            }
             CoordinateTargeted?.Invoke(coordinate);
 
             int actingSeat = state.TurnSeat;
@@ -136,7 +144,9 @@ namespace TRIAD.Battle
             ActionResult result = RuleEngine.Apply(state, action);
             if (!result.Success)
             {
-                if (statusLabel != null) statusLabel.text = ErrorLabel(result.Error);
+                string message = ErrorLabel(result.Error);
+                if (statusLabel != null) statusLabel.text = message;
+                InteractionRejected?.Invoke(message, action.Target);
                 return false;
             }
 
