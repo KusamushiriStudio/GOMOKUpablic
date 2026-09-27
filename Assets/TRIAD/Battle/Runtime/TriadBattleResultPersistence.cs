@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using TRIAD.Core.Application;
@@ -8,10 +9,26 @@ using UnityEngine.UI;
 
 namespace TRIAD.Battle
 {
+    [Serializable]
+    public sealed class TriadBattleHistoryEntry
+    {
+        public string matchId;
+        public int winnerSeat;
+        public int awardPoints;
+        public long completedUtcTicks;
+    }
+
+    [Serializable]
+    internal sealed class TriadBattleHistoryPayload
+    {
+        public List<TriadBattleHistoryEntry> entries = new();
+    }
+
     [DisallowMultipleComponent]
     public sealed class TriadBattleLocalResultSink : MonoBehaviour, IMatchResultSink
     {
         private const string Prefix = "TRIAD.Battle.Stats.v1.";
+        private const string HistoryKey = "TRIAD.Battle.History.v1";
 
         public int TotalMatches => PlayerPrefs.GetInt(Prefix + "Total", 0);
         public int SeatOneWins => PlayerPrefs.GetInt(Prefix + "SeatOneWins", 0);
@@ -35,9 +52,38 @@ namespace TRIAD.Battle
             PlayerPrefs.SetInt(Prefix + "BattlePoints", BattlePoints + award);
             PlayerPrefs.SetString(Prefix + "LastMatchId", result.MatchId);
             PlayerPrefs.SetString(Prefix + "LastRequestId", result.RequestId);
+            TriadBattleHistoryPayload history = LoadHistoryPayload();
+            history.entries.Insert(0, new TriadBattleHistoryEntry
+            {
+                matchId = result.MatchId,
+                winnerSeat = result.WinnerSeat,
+                awardPoints = award,
+                completedUtcTicks = DateTime.UtcNow.Ticks
+            });
+            if (history.entries.Count > 10) history.entries.RemoveRange(10, history.entries.Count - 10);
+            PlayerPrefs.SetString(HistoryKey, JsonUtility.ToJson(history));
             PlayerPrefs.Save();
             LastAwardPoints = award;
             return Task.CompletedTask;
+        }
+
+        public IReadOnlyList<TriadBattleHistoryEntry> LoadHistory() => LoadHistoryPayload().entries;
+
+        private static TriadBattleHistoryPayload LoadHistoryPayload()
+        {
+            string json = PlayerPrefs.GetString(HistoryKey, string.Empty);
+            if (string.IsNullOrWhiteSpace(json)) return new TriadBattleHistoryPayload();
+            try
+            {
+                TriadBattleHistoryPayload payload = JsonUtility.FromJson<TriadBattleHistoryPayload>(json);
+                if (payload == null) return new TriadBattleHistoryPayload();
+                payload.entries ??= new List<TriadBattleHistoryEntry>();
+                return payload;
+            }
+            catch (ArgumentException)
+            {
+                return new TriadBattleHistoryPayload();
+            }
         }
     }
 
