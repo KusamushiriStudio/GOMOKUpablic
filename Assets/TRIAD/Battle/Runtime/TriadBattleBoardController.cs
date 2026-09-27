@@ -15,7 +15,7 @@ namespace TRIAD.Battle
     public sealed class TriadBattleBoardController : MonoBehaviour, IPointerClickHandler
     {
         private const float GridSpacing = .04f;
-        private const float BoardSurfaceY = .0185f;
+        private const float BoardSurfaceY = .0405f;
 
         [SerializeField] private Camera boardCamera;
         [SerializeField] private Mesh stoneMesh;

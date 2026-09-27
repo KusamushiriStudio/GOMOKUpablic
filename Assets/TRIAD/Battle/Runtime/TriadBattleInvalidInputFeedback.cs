@@ -9,7 +9,7 @@ namespace TRIAD.Battle
     public sealed class TriadBattleInvalidInputFeedback : MonoBehaviour
     {
         private const float GridSpacing = .04f;
-        private const float BoardSurfaceY = .0185f;
+        private const float BoardSurfaceY = .0405f;
 
         [SerializeField] private TriadBattleBoardController controller;
         [SerializeField] private Transform markerRoot;
