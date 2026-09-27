@@ -9,10 +9,16 @@ namespace TRIAD.UI
     {
         [SerializeField] private TriadHomeScreenController controller;
         [SerializeField] private string battleSceneName = "BattlePhase1";
+        [SerializeField] private string storySceneName;
+        [SerializeField] private string gachaSceneName;
+        [SerializeField] private string wardrobeSceneName;
         private bool subscribed;
 
         public TriadHomeScreenController Controller => controller;
         public string BattleSceneName => battleSceneName;
+        public string StorySceneName => storySceneName;
+        public string GachaSceneName => gachaSceneName;
+        public string WardrobeSceneName => wardrobeSceneName;
 
         public void Configure(TriadHomeScreenController homeController, string battleScene)
         {
@@ -20,6 +26,13 @@ namespace TRIAD.UI
             controller = homeController;
             battleSceneName = battleScene;
             if (isActiveAndEnabled) Subscribe();
+        }
+
+        public void ConfigureFeatureScenes(string storyScene, string gachaScene = "", string wardrobeScene = "")
+        {
+            storySceneName = storyScene ?? string.Empty;
+            gachaSceneName = gachaScene ?? string.Empty;
+            wardrobeSceneName = wardrobeScene ?? string.Empty;
         }
 
         private void OnEnable() => Subscribe();
@@ -41,20 +54,24 @@ namespace TRIAD.UI
 
         private void Route(TriadHomeRoute route)
         {
-            if (route == TriadHomeRoute.Battle)
+            string destination = route switch
             {
-                StartCoroutine(LoadBattle());
-                return;
-            }
+                TriadHomeRoute.Battle => battleSceneName,
+                TriadHomeRoute.Story => storySceneName,
+                TriadHomeRoute.Gacha => gachaSceneName,
+                TriadHomeRoute.Wardrobe => wardrobeSceneName,
+                _ => string.Empty
+            };
 
-            // Other destination scenes are connected in later milestones. Keep the
-            // current screen operable until each real destination is ready.
-            controller.CompleteNavigation();
+            if (!string.IsNullOrWhiteSpace(destination))
+                StartCoroutine(LoadDestination(destination));
+            else
+                controller.CompleteNavigation();
         }
 
-        private IEnumerator LoadBattle()
+        private IEnumerator LoadDestination(string sceneName)
         {
-            AsyncOperation operation = SceneManager.LoadSceneAsync(battleSceneName, LoadSceneMode.Single);
+            AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single);
             if (operation == null)
             {
                 controller.CompleteNavigation();

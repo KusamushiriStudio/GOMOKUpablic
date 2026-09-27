@@ -14,5 +14,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/TRIAD/Battle/Scenes/BattlePhase33.unity
     guid: 280bc4d2cab64e14e9055930c6994dfc
+  - enabled: 1
+    path: Assets/TRIAD/UI/Scenes/StoryPhase34.unity
+    guid: d61a965587ad2c74d9f64578d14db387
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

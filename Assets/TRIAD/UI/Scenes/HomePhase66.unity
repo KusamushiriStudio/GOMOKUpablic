@@ -4670,6 +4670,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TRIAD.UI.TriadHomeSceneRouter
   controller: {fileID: 497293289}
   battleSceneName: BattlePhase33
+  storySceneName: StoryPhase34
+  gachaSceneName: 
+  wardrobeSceneName: 
 --- !u!222 &502552009
 CanvasRenderer:
   m_ObjectHideFlags: 0
