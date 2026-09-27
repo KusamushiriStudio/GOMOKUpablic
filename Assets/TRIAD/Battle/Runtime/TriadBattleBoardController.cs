@@ -42,6 +42,7 @@ namespace TRIAD.Battle
         public MatchState State => state;
         public Camera BoardCamera => boardCamera;
         public Mesh StoneMesh => stoneMesh;
+        public Transform EffectRoot => effectRoot;
         public int SpawnedStoneCount => spawnedStones.Count;
         public int SpawnedEffectCount => spawnedEffects.Count;
         public string SelectedSkillId => selectedSkillId;
