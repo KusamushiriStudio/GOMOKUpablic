@@ -53,6 +53,7 @@ namespace TRIAD.Battle
         public event Action<string> SkillSelectionChanged;
         public event Action<string> ActionResolved;
         public event Action<MatchAction> ActionCommitted;
+        public event Action<BoardCoordinate> CoordinateTargeted;
 
         public void Configure(Camera camera, Mesh mesh, Transform stones,
             Text turn, Text energy, Text status, Button back, Button reset, string homeScene)
@@ -105,6 +106,7 @@ namespace TRIAD.Battle
             Vector3 snapped = PositionFor(coordinate);
             if (Vector2.Distance(new Vector2(point.x, point.z), new Vector2(snapped.x, snapped.z)) > GridSpacing * .48f)
                 return;
+            CoordinateTargeted?.Invoke(coordinate);
 
             int actingSeat = state.TurnSeat;
             MatchAction action;
