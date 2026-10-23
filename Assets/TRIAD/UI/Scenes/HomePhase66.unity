@@ -4672,7 +4672,7 @@ MonoBehaviour:
   battleSceneName: BattlePhase33
   storySceneName: StoryPhase34
   gachaSceneName: GachaPhase35
-  wardrobeSceneName: 
+  wardrobeSceneName: WardrobePhase36
 --- !u!222 &502552009
 CanvasRenderer:
   m_ObjectHideFlags: 0

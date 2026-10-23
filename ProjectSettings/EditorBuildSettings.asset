@@ -20,5 +20,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/TRIAD/UI/Scenes/GachaPhase35.unity
     guid: d9c7e20e26564b546913e1ffe302ab14
+  - enabled: 1
+    path: Assets/TRIAD/UI/Scenes/WardrobePhase36.unity
+    guid: cc7eaba9f66770245b46553755d9c192
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0
